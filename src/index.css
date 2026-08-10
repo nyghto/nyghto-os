@@ -1,0 +1,42 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+  --bg-main: #FFFFFF;
+  --bg-card: #F8FAFC;
+  --text-main: #0F172A; /* Much darker for better contrast */
+  --text-muted: #475569; /* Darker muted text */
+  --border-glass: rgba(0, 0, 0, 0.08);
+  --theme-orange: #FF6B00;
+  --theme-yellow: #FFB800;
+}
+  
+  .dark {
+    --bg-main: #000000; /* Pure black */
+    --bg-card: rgba(20, 20, 20, 0.7); /* Translucent dark card */
+    --text-main: #F8FAFC;
+    --text-muted: #94A3B8;
+    --border-glass: rgba(255, 255, 255, 0.05);
+  }
+}
+
+@layer utilities {
+  .glass-card {
+    @apply bg-theme-card backdrop-blur-2xl border border-theme-border rounded-2xl shadow-xl transition-all duration-300;
+  }
+  
+  /* Add scale effect only on hoverable specific elements where we add a class or just add hover:scale to cards */
+  .hover-scale {
+    @apply hover:scale-[1.02] transition-transform duration-300;
+  }
+  
+  .btn-primary {
+    @apply px-4 py-2 bg-gradient-to-r from-nyghto-orange to-nyghto-yellow text-white font-medium rounded-lg hover:shadow-[0_0_20px_rgba(255,107,0,0.6)] hover:-translate-y-0.5 transition-all duration-300;
+  }
+}
+
+body {
+  @apply bg-theme-bg text-theme-text font-sans antialiased transition-colors duration-500;
+}
