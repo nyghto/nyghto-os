@@ -1,5 +1,5 @@
 import React, { useRef, useEffect, useState } from 'react';
-import { Tldraw, Editor, DefaultColorStyle } from 'tldraw';
+import { Tldraw, Editor, DefaultColorStyle, createShapeId } from 'tldraw';
 import 'tldraw/tldraw.css';
 import { useTheme } from '../contexts/ThemeContext';
 import { useAuth } from '../contexts/AuthContext';
@@ -45,11 +45,23 @@ export default function Whiteboard() {
 
     const handleDblClick = (e: MouseEvent) => {
       if (!editor) return;
-      editor.setCurrentTool('text');
       const point = editor.screenToPage({ x: e.clientX, y: e.clientY });
       const shape = editor.getShapeAtPoint(point);
-      if (shape) {
+      if (shape && shape.type === 'text') {
         editor.setEditingShape(shape.id);
+      } else {
+        const id = createShapeId();
+        editor.createShape({
+          id,
+          type: 'text',
+          x: point.x,
+          y: point.y,
+          props: {
+            text: '',
+            color: 'white',
+          },
+        });
+        editor.setEditingShape(id);
       }
     };
 
