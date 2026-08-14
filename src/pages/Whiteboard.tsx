@@ -1,5 +1,5 @@
 import React, { useRef, useEffect, useState } from 'react';
-import { Tldraw, Editor } from 'tldraw';
+import { Tldraw, Editor, DefaultColorStyle } from 'tldraw';
 import 'tldraw/tldraw.css';
 import { useTheme } from '../contexts/ThemeContext';
 import { useAuth } from '../contexts/AuthContext';
@@ -17,6 +17,8 @@ export default function Whiteboard() {
     setEditor(ed);
     // Force camera to origin on load
     ed.setCamera({ x: 0, y: 0, z: 1 });
+    // Set default styling to white
+    ed.setStyleForNextShapes(DefaultColorStyle, 'white');
   };
 
   // Intercept wheel events to create a custom vertical scroll behavior
@@ -60,6 +62,15 @@ export default function Whiteboard() {
           }
           .tl-background {
             display: none !important;
+          }
+          /* Remove text stroke/shadow */
+          .tl-text-content, .tl-text {
+            -webkit-text-stroke: 0px transparent !important;
+            text-shadow: none !important;
+          }
+          /* Force text color to be pure white if not explicitly styled */
+          .tl-text-content {
+            color: #ffffff !important;
           }
         `}
       </style>
