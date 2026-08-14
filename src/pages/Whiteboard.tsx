@@ -21,6 +21,40 @@ export default function Whiteboard() {
     ed.setStyleForNextShapes(DefaultColorStyle, 'white');
     // Set default tool to text so clicking anywhere starts typing
     ed.setCurrentTool('text');
+
+    // Attach native tldraw event listener for double click & right click
+    ed.on('event', (info: any) => {
+      // 1. Double click to type
+      if (info.name === 'double_click') {
+        const point = info.point || ed.inputs.currentPagePoint;
+        const shape = ed.getShapeAtPoint(point);
+        if (shape && shape.type === 'text') {
+          ed.setEditingShape(shape.id);
+        } else {
+          const id = createShapeId();
+          ed.createShape({
+            id,
+            type: 'text',
+            x: point.x,
+            y: point.y,
+            props: {
+              text: '',
+              color: 'white',
+            },
+          });
+          ed.setEditingShape(id);
+        }
+      }
+
+      // 2. Right click to delete shape
+      if ((info.name === 'pointer_down' && info.button === 2) || info.name === 'context_menu') {
+        const point = info.point || ed.inputs.currentPagePoint;
+        const shape = ed.getShapeAtPoint(point);
+        if (shape) {
+          ed.deleteShapes([shape.id]);
+        }
+      }
+    });
   };
 
   // Intercept wheel events to create a custom vertical scroll behavior
@@ -43,52 +77,21 @@ export default function Whiteboard() {
       });
     };
 
-    const handleDblClick = (e: MouseEvent) => {
-      if (!editor) return;
-      const point = editor.screenToPage({ x: e.clientX, y: e.clientY });
-      const shape = editor.getShapeAtPoint(point);
-      if (shape && shape.type === 'text') {
-        editor.setEditingShape(shape.id);
-      } else {
-        const id = createShapeId();
-        editor.createShape({
-          id,
-          type: 'text',
-          x: point.x,
-          y: point.y,
-          props: {
-            text: '',
-            color: 'white',
-          },
-        });
-        editor.setEditingShape(id);
-      }
-    };
-
     const handleContextMenu = (e: MouseEvent) => {
-      if (!editor) return;
       e.preventDefault();
       e.stopPropagation();
-
       const point = editor.screenToPage({ x: e.clientX, y: e.clientY });
       const shape = editor.getShapeAtPoint(point);
       if (shape) {
         editor.deleteShapes([shape.id]);
-      } else {
-        const selected = editor.getSelectedShapes();
-        if (selected.length > 0) {
-          editor.deleteShapes(selected.map((s) => s.id));
-        }
       }
     };
 
     el.addEventListener('wheel', handleWheel, { passive: false, capture: true });
-    el.addEventListener('dblclick', handleDblClick, { capture: true });
     el.addEventListener('contextmenu', handleContextMenu, { capture: true });
     
     return () => {
       el.removeEventListener('wheel', handleWheel, { capture: true });
-      el.removeEventListener('dblclick', handleDblClick, { capture: true });
       el.removeEventListener('contextmenu', handleContextMenu, { capture: true });
     };
   }, [editor]);
@@ -141,7 +144,6 @@ export default function Whiteboard() {
           <Tldraw 
             persistenceKey="nyghto-whiteboard-data" 
             darkMode={true} 
-            isReadonly={!hasAdminAccess(user?.email)}
             onMount={handleMount}
             components={{
               NavigationPanel: () => null,
