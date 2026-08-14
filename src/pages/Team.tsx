@@ -122,6 +122,11 @@ export default function Team() {
     // Find current status
     const currentRecord = attendanceRecords.find(r => r.userId === userId && r.date === dateStr);
     const currentStatus = currentRecord?.status || 'None';
+
+    // PERMANENT OFF DAY CHECK: If already Off Day, it cannot be changed!
+    if (currentStatus === 'Off Day') {
+      return;
+    }
     
     // Cycle: None -> Present -> Half Day -> Absent -> None
     let nextStatus = 'Present';
@@ -143,6 +148,25 @@ export default function Team() {
       }
     } catch (error) {
       console.error("Error updating attendance:", error);
+    }
+  };
+
+  const markAllAsPermanentOffDay = async (day: number) => {
+    const dateStr = `${attendanceYear}-${String(attendanceMonth + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+    try {
+      const promises = teamMembers.map(member => {
+        const docId = `${dateStr}_${member.id}`;
+        return setDoc(doc(db, 'attendance', docId), {
+          userId: member.id,
+          date: dateStr,
+          status: 'Off Day',
+          updatedAt: serverTimestamp(),
+          updatedBy: userData?.name || 'User'
+        });
+      });
+      await Promise.all(promises);
+    } catch (error) {
+      console.error("Error setting permanent off day:", error);
     }
   };
 
@@ -502,15 +526,17 @@ export default function Team() {
                         className={`px-4 py-2 border-r border-white/10 font-medium sticky left-0 bg-nyghto-dark/95 backdrop-blur-sm cursor-context-menu ${isToday ? 'text-nyghto-orange' : 'text-gray-400'}`}
                         onContextMenu={(e) => {
                           e.preventDefault();
-                          toggleAllOffDay(day);
+                          e.stopPropagation();
+                          setOffDayContextMenu({ x: e.clientX, y: e.clientY, day });
                         }}
-                        title="Right click to mark Off Day for everyone"
+                        title="Right click to open Off Day menu"
                       >
                         {day} {monthName.substring(0, 3)}
                       </td>
                       {teamMembers.map(member => {
                         const record = attendanceRecords.find(r => r.userId === member.id && r.date === dateStr);
                         const status = record?.status || 'None';
+                        const isOffDay = status === 'Off Day';
                         
                         let display = '-';
                         let classes = 'text-gray-500 bg-transparent border-transparent hover:border-white/20 hover:bg-white/5';
@@ -532,9 +558,10 @@ export default function Team() {
                         return (
                           <td key={member.id} className="px-4 py-2 border-white/10">
                             <button 
-                              onClick={() => cycleAttendance(member.id, day)}
-                              className={`w-10 h-8 rounded border transition-all ${classes}`}
-                              title={`Click to change status (Currently: ${status})`}
+                              disabled={isOffDay}
+                              onClick={() => !isOffDay && cycleAttendance(member.id, day)}
+                              className={`w-10 h-8 rounded border transition-all ${classes} ${isOffDay ? 'cursor-not-allowed opacity-80' : ''}`}
+                              title={isOffDay ? 'Off Day (Permanent - Cannot be changed)' : `Click to change status (Currently: ${status})`}
                             >
                               {display}
                             </button>
@@ -552,8 +579,45 @@ export default function Team() {
             <div className="flex items-center gap-1.5"><div className="w-4 h-4 rounded bg-green-500/20 border border-green-500/30 flex items-center justify-center text-[10px] text-green-400 font-bold">P</div> = Present</div>
             <div className="flex items-center gap-1.5"><div className="w-4 h-4 rounded bg-yellow-500/20 border border-yellow-500/30 flex items-center justify-center text-[10px] text-nyghto-yellow font-bold">HD</div> = Half Day</div>
             <div className="flex items-center gap-1.5"><div className="w-4 h-4 rounded bg-red-500/20 border border-red-500/30 flex items-center justify-center text-[10px] text-red-400 font-bold">A</div> = Absent</div>
-            <div className="flex items-center gap-1.5"><div className="w-4 h-4 rounded bg-gray-500/20 border border-gray-500/30 flex items-center justify-center text-[10px] text-gray-400 font-bold">O</div> = Off Day</div>
+            <div className="flex items-center gap-1.5"><div className="w-4 h-4 rounded bg-gray-500/20 border border-gray-500/30 flex items-center justify-center text-[10px] text-gray-400 font-bold">O</div> = Off Day (Permanent)</div>
           </div>
+        </div>
+      )}
+
+      {/* Off Day Right Click Context Menu */}
+      {offDayContextMenu && (
+        <div 
+          className="fixed z-50 bg-[#1a1a20] border border-white/20 shadow-2xl rounded-xl p-1.5 min-w-[150px] animate-in fade-in zoom-in-95"
+          style={{ top: `${offDayContextMenu.y}px`, left: `${offDayContextMenu.x}px` }}
+          onClick={(e) => e.stopPropagation()}
+        >
+          {(() => {
+            const dateStr = `${attendanceYear}-${String(attendanceMonth + 1).padStart(2, '0')}-${String(offDayContextMenu.day).padStart(2, '0')}`;
+            const isAlreadyOffDay = teamMembers.every(member => {
+              const record = attendanceRecords.find(r => r.userId === member.id && r.date === dateStr);
+              return record?.status === 'Off Day';
+            });
+
+            if (isAlreadyOffDay) {
+              return (
+                <div className="px-3 py-2 text-xs font-semibold text-gray-400 flex items-center gap-2">
+                  <span>🔒 Off Day (Locked)</span>
+                </div>
+              );
+            }
+
+            return (
+              <button
+                onClick={() => {
+                  markAllAsPermanentOffDay(offDayContextMenu.day);
+                  setOffDayContextMenu(null);
+                }}
+                className="w-full flex items-center gap-2 px-3 py-2 text-xs font-bold text-nyghto-orange hover:bg-nyghto-orange/10 rounded-lg transition-colors text-left cursor-pointer"
+              >
+                <span>🏖️ Off Day</span>
+              </button>
+            );
+          })()}
         </div>
       )}
 
