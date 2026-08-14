@@ -19,6 +19,8 @@ export default function Whiteboard() {
     ed.setCamera({ x: 0, y: 0, z: 1 });
     // Set default styling to white
     ed.setStyleForNextShapes(DefaultColorStyle, 'white');
+    // Set default tool to text so clicking anywhere starts typing
+    ed.setCurrentTool('text');
   };
 
   // Intercept wheel events to create a custom vertical scroll behavior
