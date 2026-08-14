@@ -7,7 +7,7 @@ import type { ThemeColorName } from './contexts/ThemeContext';
 import { TeamProvider } from './contexts/TeamContext';
 import { auth, db } from './lib/firebase';
 import { collection, query, orderBy, limit, onSnapshot, doc, deleteDoc } from 'firebase/firestore';
-import { hasAdminAccess } from './utils/permissions';
+import { hasAdminAccess, getUserRole, getUserName, getUserAvatar } from './utils/permissions';
 import type { Activity } from './types';
 import Dashboard from './pages/Dashboard';
 import Projects from './pages/Projects';
@@ -21,7 +21,10 @@ import { motion, AnimatePresence } from 'framer-motion';
 
 function Sidebar() {
   const location = useLocation();
-  const { userData } = useAuth();
+  const { user, userData } = useAuth();
+  const role = getUserRole(user?.email, userData?.role);
+  const name = getUserName(user?.email, userData?.name);
+  const avatar = getUserAvatar(user?.email);
   
   const navItems = [
     { icon: LayoutDashboard, label: 'Dashboard', path: '/' },
@@ -68,12 +71,20 @@ function Sidebar() {
         <div className="border-t border-theme-border pt-4 mt-2">
           <div className="flex items-center justify-between px-2 cursor-pointer hover:bg-theme-border p-2 rounded-lg transition-all duration-300 hover-scale group">
             <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-full bg-theme-bg flex items-center justify-center text-nyghto-orange border border-theme-border uppercase shadow-sm">
-                {userData?.name?.charAt(0) || 'U'}
-              </div>
-              <div>
-                <div className="text-sm font-medium text-theme-text">{userData?.name || 'User'}</div>
-                <div className="text-xs text-theme-muted">{userData?.role || 'Employee'}</div>
+              {avatar ? (
+                <img
+                  src={avatar}
+                  alt={name}
+                  className="w-10 h-10 rounded-full object-cover border border-nyghto-orange/40 shadow-sm"
+                />
+              ) : (
+                <div className="w-10 h-10 rounded-full bg-theme-bg flex items-center justify-center text-nyghto-orange border border-theme-border uppercase shadow-sm font-bold">
+                  {name?.charAt(0) || 'U'}
+                </div>
+              )}
+              <div className="overflow-hidden">
+                <div className="text-sm font-medium text-theme-text truncate">{name}</div>
+                <div className="text-xs font-semibold text-nyghto-orange uppercase tracking-wide">{role}</div>
               </div>
             </div>
             <button 
