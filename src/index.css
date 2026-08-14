@@ -5,20 +5,22 @@
 @layer base {
   :root {
   --bg-main: #FFFFFF;
+  --bg-gradient: none;
   --bg-card: #F8FAFC;
   --text-main: #0F172A; /* Much darker for better contrast */
   --text-muted: #475569; /* Darker muted text */
   --border-glass: rgba(0, 0, 0, 0.08);
-  --theme-orange: #FF6B00;
-  --theme-yellow: #FFB800;
+  --theme-accent: #FF6B00; /* default nyghto orange */
+  --theme-accent-secondary: #FFB800; /* default yellow */
 }
   
   .dark {
-    --bg-main: #000000; /* Pure black */
-    --bg-card: rgba(20, 20, 20, 0.7); /* Translucent dark card */
+    --bg-main: #000000;
+    --bg-gradient: linear-gradient(180deg, #1d4ed8 0%, #000000 60%);
+    --bg-card: rgba(10, 15, 30, 0.6); /* Translucent dark bluish card */
     --text-main: #F8FAFC;
     --text-muted: #94A3B8;
-    --border-glass: rgba(255, 255, 255, 0.05);
+    --border-glass: rgba(255, 255, 255, 0.1);
   }
 }
 
@@ -38,5 +40,9 @@
 }
 
 body {
-  @apply bg-theme-bg text-theme-text font-sans antialiased transition-colors duration-500;
+  @apply text-theme-text font-sans antialiased transition-colors duration-500;
+  background-color: var(--bg-main);
+  background-image: var(--bg-gradient);
+  background-attachment: fixed;
+  min-height: 100vh;
 }

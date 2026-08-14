@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { 
   Briefcase, CheckCircle, Clock, AlertTriangle, 
-  Users, TrendingUp, DollarSign, Activity as ActivityIcon, Calendar, Plus, Target
+  Users, TrendingUp, DollarSign, Activity as ActivityIcon, Calendar, Plus, Target, CheckSquare
 } from 'lucide-react';
 import { 
   AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
@@ -10,9 +10,11 @@ import {
 import { collection, onSnapshot, addDoc, query, orderBy, serverTimestamp, limit } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import { useAuth } from '../contexts/AuthContext';
+import { useTeam } from '../contexts/TeamContext';
 import type { CalendarLog, Activity, Task, Project } from '../types';
 import { X } from 'lucide-react';
 import { doc, deleteDoc } from 'firebase/firestore';
+import { AIInsights } from '../components/AIInsights';
 
 function StatCard({ icon: Icon, label, value, trend, trendUp }: any) {
   return (
@@ -45,8 +47,21 @@ const getActivityIcon = (type: string) => {
   }
 };
 
+const formatTaskDate = (dateString: string) => {
+  if (!dateString || dateString === 'Today') return dateString;
+  try {
+    const date = new Date(dateString);
+    if (isNaN(date.getTime())) return dateString;
+    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    return `${months[date.getMonth()]} ${date.getDate()} ${date.getFullYear()}`;
+  } catch (e) {
+    return dateString;
+  }
+};
+
 export default function Dashboard() {
-  const { userData } = useAuth();
+  const { user, userData } = useAuth();
+  const { teamMembers } = useTeam();
   const [currentDate, setCurrentDate] = useState(new Date());
   const [selectedDate, setSelectedDate] = useState(new Date().getDate());
   const [newLog, setNewLog] = useState("");
@@ -161,6 +176,10 @@ export default function Dashboard() {
     }
   });
 
+  // User identity for My Tasks Today
+  const currentMember = teamMembers.find(m => m.email === user?.email);
+  const isAdmin = user?.email === 'team.nyghto@gmail.com';
+
   // Derived Upcoming Tasks
   const upcomingTasks = tasks
     .filter(t => t.status !== 'Completed')
@@ -170,12 +189,51 @@ export default function Dashboard() {
     })
     .slice(0, 5);
 
+  const myPendingTasks = tasks.filter(t => (isAdmin || t.assigneeId === currentMember?.id) && t.status !== 'Completed');
+  
+  const totalTasksCount = tasks.length;
+  
+  // Motivational Quotes
+  const quotes = [
+    "Stay focused and never give up.",
+    "The only way to do great work is to love what you do.",
+    "Your limitation—it's only your imagination.",
+    "Push yourself, because no one else is going to do it for you.",
+    "Great things never come from comfort zones.",
+    "Dream it. Wish it. Do it.",
+    "Success doesn’t just find you. You have to go out and get it."
+  ];
+  const [dailyQuote, setDailyQuote] = useState(quotes[0]);
+  useEffect(() => {
+    setDailyQuote(quotes[Math.floor(Math.random() * quotes.length)]);
+  }, []);
+
+  const getGreeting = () => {
+    const day = new Date().getDay();
+    switch(day) {
+      case 0: return { main: 'Relax, it\'s Sunday', sub: 'Enjoy your weekend!' };
+      case 1: return { main: 'Happy Monday', sub: 'Let\'s start the week strong!' };
+      case 2: return { main: 'Terrific Tuesday', sub: 'Keep the momentum going!' };
+      case 3: return { main: 'Wonderful Wednesday', sub: 'Halfway through the week!' };
+      case 4: return { main: 'Thrilling Thursday', sub: 'Almost there!' };
+      case 5: return { main: 'Thank God it\'s Friday', sub: 'Finish up and relax!' };
+      case 6: return { main: 'Super Saturday', sub: 'Enjoy your weekend!' };
+      default: return { main: 'Welcome back', sub: 'Let\'s get things done!' };
+    }
+  };
+
+  const displayName = currentMember 
+    ? currentMember.name.charAt(0).toUpperCase() + currentMember.name.slice(1).toLowerCase() 
+    : (isAdmin ? 'Nyghto' : 'User');
+
+  const greeting = getGreeting();
+
   return (
     <div className="space-y-8 animate-in fade-in duration-500 pb-10">
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
-          <h1 className="text-3xl font-bold mb-1 text-theme-text">Overview</h1>
-          <p className="text-theme-muted">Welcome back, {userData?.name?.replace(/shahalmuhammed\s*404/gi, 'Nighto') || 'User'}! Here's what's happening today.</p>
+          <h1 className="text-3xl font-bold mb-1 text-theme-text">{greeting.main}, {displayName}! {greeting.sub}</h1>
+          <p className="text-theme-muted">You have {myPendingTasks.length} pending tasks today.</p>
         </div>
       </div>
       
@@ -184,10 +242,20 @@ export default function Dashboard() {
         <StatCard icon={Briefcase} label="Active Projects" value={activeProjects.toString()} trend="14" trendUp={true} />
         <StatCard icon={CheckCircle} label="Completed Projects" value={completedProjects.toString()} trend="8" trendUp={true} />
         <StatCard icon={AlertTriangle} label="Critical Tasks" value={overdueTasks.toString()} trend="12" trendUp={false} />
-        <StatCard icon={DollarSign} label="Total Revenue" value={`$${totalRevenue.toLocaleString()}`} />
+        
+        {/* Motivational Quote */}
+        <div className="glass-card p-6 flex flex-col items-center justify-center hover-scale text-center relative overflow-hidden group">
+          <div className="absolute inset-0 bg-gradient-to-br from-nyghto-orange/5 to-transparent pointer-events-none" />
+          <h3 className="text-theme-muted text-xs font-bold uppercase tracking-widest mb-3 opacity-70">Daily Motivation</h3>
+          <p className="text-sm font-medium text-theme-text italic leading-relaxed px-2">"{dailyQuote}"</p>
+        </div>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <div className="lg:col-span-3">
+          <AIInsights tasks={tasks} projects={projects} teamMembers={teamMembers} />
+        </div>
+
         {/* Revenue Chart */}
         <div className="glass-card p-6 lg:col-span-2">
           <h3 className="text-lg font-bold mb-6 text-theme-text">Revenue Overview</h3>
@@ -250,8 +318,115 @@ export default function Dashboard() {
           </button>
         </div>
       </div>
-
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        {/* My Tasks Today */}
+        <div className="glass-card p-6 lg:col-span-2 flex flex-col max-h-[400px]">
+          <div className="flex justify-between items-center mb-6">
+            <div>
+              <h3 className="text-lg font-bold text-theme-text">My Tasks Today</h3>
+              <p className="text-xs text-theme-muted">Tasks assigned to you that need attention.</p>
+            </div>
+            <Target className="w-5 h-5 text-nyghto-orange" />
+          </div>
+          <div className="space-y-3 overflow-y-auto custom-scrollbar flex-1 pr-2">
+            {myPendingTasks.length > 0 ? (
+              myPendingTasks.map(task => {
+                const assignee = teamMembers.find(m => m.id === task.assigneeId) || teamMembers[0];
+                return (
+                <div key={task.id} className="flex justify-between items-center p-4 bg-theme-bg/50 rounded-xl border border-theme-border hover:border-nyghto-orange/50 transition-colors">
+                  <div className="flex items-center gap-4">
+                    {assignee?.avatarImage ? (
+                      <img 
+                        src={assignee.avatarImage} 
+                        alt={assignee.name} 
+                        className="w-10 h-10 rounded-full object-cover shadow-sm border-2 border-theme-border"
+                      />
+                    ) : (
+                      <div className={`w-10 h-10 rounded-full ${assignee?.color || 'bg-nyghto-orange'} flex items-center justify-center text-white font-bold shadow-sm border-2 border-theme-border`}>
+                        {assignee?.initial || 'U'}
+                      </div>
+                    )}
+                    <div>
+                      <h4 className="font-bold text-theme-text text-sm">{task.title}</h4>
+                      <p className="text-xs text-theme-muted mt-0.5">{task.project}</p>
+                    </div>
+                  </div>
+                  <div className="flex flex-col items-end">
+                    <span className={`text-[10px] px-2 py-1 rounded-full font-bold mb-1
+                      ${task.priority === 'Critical' ? 'bg-red-500/20 text-red-500' : 
+                        task.priority === 'High' ? 'bg-orange-500/20 text-orange-500' : 
+                        task.priority === 'Medium' ? 'bg-yellow-500/20 text-yellow-600' : 
+                        'bg-green-500/20 text-green-500'}`}>
+                      {task.priority}
+                    </span>
+                    <span className="text-xs text-theme-muted font-medium">{formatTaskDate(task.dueDate)}</span>
+                  </div>
+                </div>
+                );
+              })
+            ) : (
+              <div className="flex flex-col items-center justify-center h-full text-center">
+                <div className="w-16 h-16 mb-4 rounded-full bg-green-500/10 flex items-center justify-center">
+                  <CheckCircle className="w-8 h-8 text-green-500" />
+                </div>
+                <p className="text-theme-text font-bold">All caught up!</p>
+                <p className="text-xs text-theme-muted mt-1">You have no pending tasks assigned to you.</p>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Prioritized Tasks */}
+        <div className="glass-card p-6 flex flex-col max-h-[400px]">
+          <div className="flex justify-between items-center mb-6">
+            <h3 className="text-lg font-bold text-theme-text">Team Priorities</h3>
+            <Clock className="w-5 h-5 text-theme-muted" />
+          </div>
+          <div className="space-y-4 overflow-y-auto custom-scrollbar flex-1 pr-2">
+            {upcomingTasks.length > 0 ? (
+              upcomingTasks.map((item) => {
+                const assignee = teamMembers.find(m => m.id === item.assigneeId) || teamMembers[0];
+                return (
+                <div key={item.id} className="flex justify-between items-center p-3 bg-theme-bg rounded-lg border border-theme-border hover:border-nyghto-orange/50 transition-colors cursor-pointer">
+                  <div className="flex items-center gap-3">
+                    {assignee?.avatarImage ? (
+                      <img 
+                        src={assignee.avatarImage} 
+                        alt={assignee.name} 
+                        className="w-8 h-8 rounded-full object-cover shadow-sm border border-theme-border"
+                        title={`Assigned to ${assignee.name}`}
+                      />
+                    ) : (
+                      <div className={`w-8 h-8 rounded-full ${assignee?.color || 'bg-nyghto-orange'} flex items-center justify-center text-white font-bold shadow-sm text-xs border border-theme-border`} title={`Assigned to ${assignee?.name}`}>
+                        {assignee?.initial || 'U'}
+                      </div>
+                    )}
+                    <div>
+                      <h4 className="font-medium text-sm text-theme-text">{item.title}</h4>
+                      <p className="text-xs text-theme-muted mt-0.5">{item.project}</p>
+                    </div>
+                  </div>
+                  <div className="text-right">
+                    <div className={`text-[10px] px-2 py-0.5 rounded-full mb-1 inline-block font-medium
+                      ${item.priority === 'Critical' ? 'bg-red-500/20 text-red-500' : 
+                        item.priority === 'High' ? 'bg-orange-500/20 text-orange-500' : 
+                        item.priority === 'Medium' ? 'bg-yellow-500/20 text-yellow-600' : 
+                        'bg-green-500/20 text-green-500'}`}>
+                      {item.priority}
+                    </div>
+                    <p className="text-[10px] text-theme-muted block">{formatTaskDate(item.dueDate)}</p>
+                  </div>
+                </div>
+                );
+              })
+            ) : (
+              <p className="text-sm text-theme-muted italic text-center py-4">No pending tasks.</p>
+            )}
+          </div>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Project Completion Chart */}
         <div className="glass-card p-6">
           <h3 className="text-lg font-bold mb-6 text-theme-text">Projects Status</h3>
@@ -351,39 +526,9 @@ export default function Dashboard() {
             </form>
           </div>
         </div>
-
-        {/* Upcoming Deadlines */}
-        <div className="glass-card p-6">
-          <div className="flex justify-between items-center mb-6">
-            <h3 className="text-lg font-bold text-theme-text">Prioritized Tasks</h3>
-            <Clock className="w-5 h-5 text-theme-muted" />
-          </div>
-          <div className="space-y-4">
-            {upcomingTasks.length > 0 ? (
-              upcomingTasks.map((item) => (
-                <div key={item.id} className="flex justify-between items-center p-3 bg-theme-bg rounded-lg border border-theme-border hover:border-nyghto-orange/50 transition-colors cursor-pointer">
-                  <div>
-                    <h4 className="font-medium text-sm text-theme-text">{item.title}</h4>
-                    <p className="text-xs text-theme-muted mt-1">{item.project}</p>
-                  </div>
-                  <div className="text-right">
-                    <div className={`text-[10px] px-2 py-0.5 rounded-full mb-1 inline-block font-medium
-                      ${item.priority === 'Critical' ? 'bg-red-500/20 text-red-500' : 
-                        item.priority === 'High' ? 'bg-orange-500/20 text-orange-500' : 
-                        item.priority === 'Medium' ? 'bg-yellow-500/20 text-yellow-600' : 
-                        'bg-green-500/20 text-green-500'}`}>
-                      {item.priority}
-                    </div>
-                    <p className="text-[10px] text-theme-muted block">{item.dueDate}</p>
-                  </div>
-                </div>
-              ))
-            ) : (
-              <p className="text-sm text-theme-muted italic text-center py-4">No pending tasks.</p>
-            )}
-          </div>
-        </div>
       </div>
+
+
 
       {/* All Activity Modal */}
       {showAllActivity && (

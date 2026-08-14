@@ -3,16 +3,12 @@ import { Search, Plus, Filter, FileText, CheckCircle2, Clock, AlertCircle, Users
 import { collection, onSnapshot, addDoc, query, orderBy, serverTimestamp, doc, updateDoc, deleteDoc, setDoc } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import { useAuth } from '../contexts/AuthContext';
-import type { Report } from '../types';
-
-const TEAM_MEMBERS = [
-  { id: 'u1', name: 'RINSHAN', role: 'CEO', initial: 'R', color: 'bg-nyghto-orange', phone: '+91 9539202847' },
-  { id: 'u2', name: 'AMAL', role: 'CTO', initial: 'A', color: 'bg-blue-500', phone: '+91 7012028379' },
-  { id: 'u3', name: 'SHAHAL', role: 'CPO', initial: 'S', color: 'bg-green-500', phone: '+91 8075911860' },
-];
+import { useTeam } from '../contexts/TeamContext';
+import { hasAdminAccess } from '../utils/permissions';
 
 export default function Team() {
-  const { userData } = useAuth();
+  const { userData, user } = useAuth();
+  const { teamMembers, updateMemberAvatar } = useTeam();
   const [tab, setTab] = useState('Daily Reports');
   const [reports, setReports] = useState<Report[]>([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -127,12 +123,11 @@ export default function Team() {
     const currentRecord = attendanceRecords.find(r => r.userId === userId && r.date === dateStr);
     const currentStatus = currentRecord?.status || 'None';
     
-    // Cycle: None -> Present -> Half Day -> Absent -> Off Day -> None
+    // Cycle: None -> Present -> Half Day -> Absent -> None
     let nextStatus = 'Present';
     if (currentStatus === 'Present') nextStatus = 'Half Day';
     else if (currentStatus === 'Half Day') nextStatus = 'Absent';
-    else if (currentStatus === 'Absent') nextStatus = 'Off Day';
-    else if (currentStatus === 'Off Day') nextStatus = 'None';
+    else if (currentStatus === 'Absent') nextStatus = 'None';
 
     try {
       if (nextStatus === 'None') {
@@ -151,6 +146,38 @@ export default function Team() {
     }
   };
 
+  const toggleAllOffDay = async (day: number) => {
+    const dateStr = `${attendanceYear}-${String(attendanceMonth + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+    
+    // Check if everyone is already marked as 'Off Day' for this date
+    const allOffDay = teamMembers.every(member => {
+      const record = attendanceRecords.find(r => r.userId === member.id && r.date === dateStr);
+      return record?.status === 'Off Day';
+    });
+
+    try {
+      const promises = teamMembers.map(member => {
+        const docId = `${dateStr}_${member.id}`;
+        if (allOffDay) {
+          // If all are off day, clear it
+          return deleteDoc(doc(db, 'attendance', docId));
+        } else {
+          // Otherwise mark all as off day
+          return setDoc(doc(db, 'attendance', docId), {
+            userId: member.id,
+            date: dateStr,
+            status: 'Off Day',
+            updatedAt: serverTimestamp(),
+            updatedBy: userData?.name || 'User'
+          });
+        }
+      });
+      await Promise.all(promises);
+    } catch (error) {
+      console.error("Error toggling off day:", error);
+    }
+  };
+
   const updateMemberStatus = async (memberId: string, status: string) => {
     try {
       await setDoc(doc(db, 'teamStatus', memberId), { status }, { merge: true });
@@ -158,6 +185,7 @@ export default function Team() {
       console.error("Error updating team status:", error);
     }
   };
+
 
   const totalReports = reports.length;
   // Calculate average submission rate or pending - since we don't know total employees easily, we'll simplify.
@@ -168,6 +196,36 @@ export default function Team() {
   const daysArray = Array.from({ length: daysInMonth }, (_, i) => i + 1);
   const monthName = new Date(attendanceYear, attendanceMonth).toLocaleString('default', { month: 'long' });
   
+  let totalSundays = 0;
+  for (let i = 1; i <= daysInMonth; i++) {
+    if (new Date(attendanceYear, attendanceMonth, i).getDay() === 0) totalSundays++;
+  }
+  const maxMarksForMonth = (daysInMonth - totalSundays) * 10;
+
+  const calculateScore = (memberId: string) => {
+    let totalMarks = 0;
+    let leavesTaken = 0;
+    
+    for (let i = 1; i <= daysInMonth; i++) {
+      const dateStr = `${attendanceYear}-${String(attendanceMonth + 1).padStart(2, '0')}-${String(i).padStart(2, '0')}`;
+      const record = attendanceRecords.find(r => r.userId === memberId && r.date === dateStr);
+      const status = record?.status || 'None';
+      const isSunday = new Date(attendanceYear, attendanceMonth, i).getDay() === 0;
+
+      if (!isSunday && status !== 'Off Day') {
+        if (status === 'Present') totalMarks += 10;
+        else if (status === 'Half Day') totalMarks += 5;
+        else if (status === 'Absent') leavesTaken++;
+      }
+    }
+    
+    // First 2 leaves give +10 marks. Any extra leaves give 0 marks (no penalty).
+    const freeLeaves = Math.min(leavesTaken, 2);
+    totalMarks += (freeLeaves * 10);
+    
+    return totalMarks;
+  };
+  
   return (
     <div className="space-y-6 animate-in fade-in duration-500 pb-10" onClick={() => setActiveDropdown(null)}>
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
@@ -175,12 +233,14 @@ export default function Team() {
           <h1 className="text-3xl font-bold mb-1">Team & Reports</h1>
           <p className="text-gray-400">Manage your team and view daily work reports.</p>
         </div>
-        <button 
-          onClick={() => setIsSubmitting(true)}
-          className="btn-primary flex items-center gap-2 w-fit"
-        >
-          <Plus className="w-5 h-5" /> Submit My Report
-        </button>
+        {hasAdminAccess(user?.email) && (
+          <button 
+            onClick={() => setIsSubmitting(true)}
+            className="btn-primary flex items-center gap-2 w-fit"
+          >
+            <Plus className="w-5 h-5" /> Submit My Report
+          </button>
+        )}
       </div>
 
       {/* Big Tab Boxes */}
@@ -252,8 +312,16 @@ export default function Team() {
                 <CheckCircle2 className="w-6 h-6" />
               </div>
               <div>
-                <div className="text-2xl font-bold">{totalReports > 0 ? '100%' : '0%'}</div>
-                <div className="text-sm text-gray-400">Submission Rate</div>
+                <div className="text-2xl font-bold">
+                  {(() => {
+                    const todayStr = new Date().toISOString().split('T')[0];
+                    const todayReports = reports.filter(r => r.date === todayStr);
+                    const uniqueSubmitters = new Set(todayReports.map(r => r.employeeId)).size;
+                    const totalTeam = teamMembers.length;
+                    return totalTeam > 0 ? `${Math.round((uniqueSubmitters / totalTeam) * 100)}%` : '0%';
+                  })()}
+                </div>
+                <div className="text-sm text-gray-400">Today's Submission Rate</div>
               </div>
             </div>
           </div>
@@ -350,11 +418,15 @@ export default function Team() {
 
       {tab === 'Team Members' && (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {TEAM_MEMBERS.map(member => (
+          {teamMembers.map(member => (
             <div key={member.id} className="glass-card p-6 flex flex-col items-center text-center hover:border-nyghto-orange/30 transition-colors">
-              <div className={`w-20 h-20 rounded-full ${member.color} flex items-center justify-center text-2xl font-bold text-white mb-4 shadow-lg`}>
-                {member.initial}
-              </div>
+              {member.avatarImage ? (
+                <img src={member.avatarImage} alt={member.name} className="w-20 h-20 rounded-full object-cover mb-4 shadow-lg ring-2 ring-white/10" />
+              ) : (
+                <div className={`w-20 h-20 rounded-full ${member.color} flex items-center justify-center text-2xl font-bold text-white mb-4 shadow-lg`}>
+                  {member.initial}
+                </div>
+              )}
               <h3 className="text-xl font-bold text-white mb-1">{member.name}</h3>
               <p className="text-sm text-gray-400 mb-4">{member.role}</p>
               
@@ -375,8 +447,8 @@ export default function Team() {
         <div className="glass-card p-6 flex flex-col max-h-[800px]">
           <div className="flex justify-between items-center mb-6">
             <div>
-              <h3 className="text-lg font-bold text-white">Monthly Register</h3>
-              <p className="text-sm text-gray-400">Click a cell to cycle: Present → Half Day → Absent → Off Day → Clear</p>
+              <h3 className="text-xl font-bold text-white mb-1">Attendance ({monthName} {attendanceYear})</h3>
+              <p className="text-sm text-gray-400">Click a cell to cycle: Present → Half Day → Absent → Clear (Right click Date for Off Day)</p>
             </div>
             <div className="flex items-center gap-2">
               <button 
@@ -402,11 +474,18 @@ export default function Team() {
               <thead className="bg-white/5 text-gray-300 sticky top-0 z-10 shadow-md">
                 <tr>
                   <th className="px-4 py-3 font-semibold border-b border-r border-white/10 sticky left-0 bg-nyghto-dark/95 backdrop-blur-sm z-20 w-24">Date</th>
-                  {TEAM_MEMBERS.map(member => (
+                  {teamMembers.map(member => (
                     <th key={member.id} className="px-4 py-3 font-semibold border-b border-white/10 min-w-[120px]">
                       <div className="flex flex-col items-center gap-1">
-                        <div className={`w-6 h-6 rounded-full ${member.color} text-white flex items-center justify-center text-xs font-bold`}>{member.initial}</div>
+                        {member.avatarImage ? (
+                          <img src={member.avatarImage} alt={member.name} className="w-6 h-6 rounded-full object-cover" />
+                        ) : (
+                          <div className={`w-6 h-6 rounded-full ${member.color} text-white flex items-center justify-center text-xs font-bold`}>{member.initial}</div>
+                        )}
                         {member.name}
+                        <div className="text-[10px] bg-nyghto-orange/20 text-nyghto-orange px-2 py-0.5 rounded-full mt-1 border border-nyghto-orange/30">
+                          {calculateScore(member.id)} / {maxMarksForMonth}
+                        </div>
                       </div>
                     </th>
                   ))}
@@ -419,10 +498,17 @@ export default function Team() {
                   
                   return (
                     <tr key={day} className={`hover:bg-white/5 transition-colors ${isToday ? 'bg-nyghto-orange/5' : ''}`}>
-                      <td className={`px-4 py-2 border-r border-white/10 font-medium sticky left-0 bg-nyghto-dark/95 backdrop-blur-sm ${isToday ? 'text-nyghto-orange' : 'text-gray-400'}`}>
+                      <td 
+                        className={`px-4 py-2 border-r border-white/10 font-medium sticky left-0 bg-nyghto-dark/95 backdrop-blur-sm cursor-context-menu ${isToday ? 'text-nyghto-orange' : 'text-gray-400'}`}
+                        onContextMenu={(e) => {
+                          e.preventDefault();
+                          toggleAllOffDay(day);
+                        }}
+                        title="Right click to mark Off Day for everyone"
+                      >
                         {day} {monthName.substring(0, 3)}
                       </td>
-                      {TEAM_MEMBERS.map(member => {
+                      {teamMembers.map(member => {
                         const record = attendanceRecords.find(r => r.userId === member.id && r.date === dateStr);
                         const status = record?.status || 'None';
                         
@@ -615,9 +701,13 @@ export default function Team() {
               <X className="w-5 h-5" />
             </button>
             <div className="flex flex-col items-center mb-6 mt-4">
-              <div className={`w-24 h-24 rounded-full ${selectedProfile.color} flex items-center justify-center text-4xl font-bold text-white mb-4 shadow-lg ring-4 ring-white/10`}>
-                {selectedProfile.initial}
-              </div>
+              {selectedProfile.avatarImage ? (
+                <img src={selectedProfile.avatarImage} alt={selectedProfile.name} className="w-24 h-24 rounded-full object-cover mb-4 shadow-lg ring-4 ring-white/10" />
+              ) : (
+                <div className={`w-24 h-24 rounded-full ${selectedProfile.color} flex items-center justify-center text-4xl font-bold text-white mb-4 shadow-lg ring-4 ring-white/10`}>
+                  {selectedProfile.initial}
+                </div>
+              )}
               <h2 className="text-2xl font-bold text-white tracking-wide">{selectedProfile.name}</h2>
               <p className="text-nyghto-orange font-medium mt-1">{selectedProfile.role}</p>
             </div>
@@ -625,7 +715,7 @@ export default function Team() {
             <div className="space-y-3">
               <div className="bg-white/5 p-3 rounded-lg border border-white/10 flex items-center justify-between">
                 <div className="text-xs text-gray-400">Email Address</div>
-                <div className="text-sm font-medium text-white">{selectedProfile.name.toLowerCase()}@nyghto.com</div>
+                <div className="text-sm font-medium text-white">{selectedProfile.email}</div>
               </div>
               <div className="bg-white/5 p-3 rounded-lg border border-white/10 flex items-center justify-between">
                 <div className="text-xs text-gray-400">Phone Number</div>

@@ -1,17 +1,23 @@
 import React, { useState, useEffect } from 'react';
 import { BrowserRouter, Routes, Route, Link, useLocation, Navigate } from 'react-router-dom';
-import { LayoutDashboard, FolderKanban, CheckSquare, Users, BarChart3, Settings, Bell, Search, LogOut, Sun, Moon, X } from 'lucide-react';
+import { LayoutDashboard, FolderKanban, CheckSquare, Users, BarChart3, Settings, Bell, Search, LogOut, Sun, Moon, X, Palette, PenTool } from 'lucide-react';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
-import { ThemeProvider, useTheme } from './contexts/ThemeContext';
+import { ThemeProvider, useTheme, THEME_COLORS } from './contexts/ThemeContext';
+import type { ThemeColorName } from './contexts/ThemeContext';
+import { TeamProvider } from './contexts/TeamContext';
 import { auth, db } from './lib/firebase';
 import { collection, query, orderBy, limit, onSnapshot, doc, deleteDoc } from 'firebase/firestore';
+import { hasAdminAccess } from './utils/permissions';
 import type { Activity } from './types';
 import Dashboard from './pages/Dashboard';
 import Projects from './pages/Projects';
 import Tasks from './pages/Tasks';
 import Team from './pages/Team';
 import Analytics from './pages/Analytics';
+import AttendanceReport from './pages/AttendanceReport';
+import Whiteboard from './pages/Whiteboard';
 import Login from './pages/Login';
+import { motion, AnimatePresence } from 'framer-motion';
 
 function Sidebar() {
   const location = useLocation();
@@ -23,6 +29,8 @@ function Sidebar() {
     { icon: CheckSquare, label: 'Tasks', path: '/tasks' },
     { icon: Users, label: 'Team & Reports', path: '/team' },
     { icon: BarChart3, label: 'Analytics', path: '/analytics' },
+    { icon: CheckSquare, label: 'Attendance Report', path: '/attendance-report' },
+    { icon: PenTool, label: 'Whiteboard', path: '/whiteboard' },
   ];
 
   return (
@@ -83,8 +91,10 @@ function Sidebar() {
 }
 
 function Header() {
-  const { theme, toggleTheme } = useTheme();
+  const { user } = useAuth();
+  const { theme, toggleTheme, accentColor, setAccentColor } = useTheme();
   const [isNotificationsOpen, setIsNotificationsOpen] = useState(false);
+  const [isPaletteOpen, setIsPaletteOpen] = useState(false);
   const [activities, setActivities] = useState<Activity[]>([]);
 
   React.useEffect(() => {
@@ -123,7 +133,34 @@ function Header() {
         </button>
         <div className="relative">
           <button 
-            onClick={() => setIsNotificationsOpen(!isNotificationsOpen)}
+            onClick={() => { setIsPaletteOpen(!isPaletteOpen); setIsNotificationsOpen(false); }}
+            className="relative p-2 text-theme-muted hover:text-theme-text transition-colors rounded-full hover:bg-theme-border"
+            title="Change Accent Color"
+          >
+            <Palette className="w-5 h-5" />
+          </button>
+          {isPaletteOpen && (
+            <div className="absolute right-0 mt-2 w-48 bg-theme-card border border-theme-border rounded-xl shadow-2xl py-2 z-50 animate-in fade-in slide-in-from-top-2">
+              <div className="px-4 py-2 border-b border-theme-border flex justify-between items-center mb-2">
+                <h3 className="font-bold text-sm text-theme-text">Theme Color</h3>
+              </div>
+              <div className="grid grid-cols-5 gap-2 px-4 py-2">
+                {(Object.keys(THEME_COLORS) as ThemeColorName[]).map((colorName) => (
+                  <button
+                    key={colorName}
+                    onClick={() => { setAccentColor(colorName); setIsPaletteOpen(false); }}
+                    className={`w-6 h-6 rounded-full transition-transform hover:scale-110 ${accentColor === colorName ? 'ring-2 ring-white ring-offset-2 ring-offset-theme-card' : ''}`}
+                    style={{ backgroundColor: THEME_COLORS[colorName].primary }}
+                    title={colorName.charAt(0).toUpperCase() + colorName.slice(1)}
+                  />
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+        <div className="relative">
+          <button 
+            onClick={() => { setIsNotificationsOpen(!isNotificationsOpen); setIsPaletteOpen(false); }}
             className="relative p-2 text-theme-muted hover:text-theme-text transition-colors rounded-full hover:bg-theme-border"
           >
             <Bell className="w-5 h-5" />
@@ -180,16 +217,68 @@ function Header() {
 }
 
 function Layout({ children }: { children: React.ReactNode }) {
+  const location = useLocation();
+  const [scrollProgress, setScrollProgress] = useState(0);
+
+  // Track window scroll
+  useEffect(() => {
+    const handleWindowScroll = () => {
+      const scrollTop = window.scrollY;
+      const docHeight = document.documentElement.scrollHeight;
+      const winHeight = window.innerHeight;
+      const scrollHeight = docHeight - winHeight;
+      
+      if (scrollHeight > 0) {
+        setScrollProgress((scrollTop / scrollHeight) * 100);
+      } else {
+        setScrollProgress(0);
+      }
+    };
+
+    window.addEventListener('scroll', handleWindowScroll, { passive: true });
+    handleWindowScroll();
+    
+    return () => window.removeEventListener('scroll', handleWindowScroll);
+  }, []);
+
   return (
-    <div className="min-h-screen flex bg-theme-bg text-theme-text transition-colors duration-300">
-      <Sidebar />
-      <div className="flex-1 ml-64 flex flex-col min-h-screen">
-        <Header />
-        <main className="flex-1 p-8 overflow-y-auto">
-          {children}
-        </main>
+    <>
+      {/* Background Watermark */}
+      <div className="fixed inset-0 flex items-center justify-center pointer-events-none z-[-1] overflow-hidden select-none">
+        <h1 className="text-[18vw] font-black text-white/10 tracking-tighter mix-blend-overlay">nyghto</h1>
       </div>
-    </div>
+      
+      <div className="min-h-screen flex bg-transparent text-theme-text transition-colors duration-300 relative z-0">
+        <Sidebar />
+        <div className="flex-1 ml-64 flex flex-col min-h-screen">
+          <Header />
+          <main className="flex-1 p-8 overflow-y-auto overflow-x-hidden relative scroll-smooth">
+            {/* Scroll Progress Bar ONLY for Whiteboard */}
+            {location.pathname === '/whiteboard' && (
+              <div className="fixed right-0 top-0 bottom-0 w-1.5 bg-theme-border/50 z-50">
+                <div 
+                  className="w-full bg-nyghto-orange transition-all duration-150 ease-out shadow-[0_0_10px_rgba(255,107,0,0.5)]"
+                  style={{ height: `${scrollProgress}%` }}
+                />
+              </div>
+            )}
+            
+            <AnimatePresence mode="wait">
+              <motion.div
+                key={location.pathname}
+                initial={{ opacity: 0, y: 15 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -15 }}
+                transition={{ duration: 0.3 }}
+                className="h-full flex flex-col"
+              >
+                {children}
+              </motion.div>
+            </AnimatePresence>
+          </main>
+        </div>
+      </div>
+    </>
   );
 }
 
@@ -224,6 +313,8 @@ function App() {
             <Route path="/tasks" element={<ProtectedRoute><Layout><Tasks /></Layout></ProtectedRoute>} />
             <Route path="/team" element={<ProtectedRoute><Layout><Team /></Layout></ProtectedRoute>} />
             <Route path="/analytics" element={<ProtectedRoute><Layout><Analytics /></Layout></ProtectedRoute>} />
+            <Route path="/attendance-report" element={<ProtectedRoute><Layout><AttendanceReport /></Layout></ProtectedRoute>} />
+            <Route path="/whiteboard" element={<ProtectedRoute><Layout><Whiteboard /></Layout></ProtectedRoute>} />
             
             <Route path="*" element={
               <ProtectedRoute>

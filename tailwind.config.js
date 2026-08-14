@@ -9,8 +9,8 @@ export default {
     extend: {
       colors: {
         nyghto: {
-          orange: '#FF6B00',
-          yellow: '#FFC107',
+          orange: 'var(--theme-accent)',
+          yellow: 'var(--theme-accent-secondary)',
           dark: '#0A0A0A',
           card: '#161616',
           border: '#2A2A2A',

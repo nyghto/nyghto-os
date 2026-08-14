@@ -41,6 +41,7 @@ export interface Project {
   priority: 'Low' | 'Medium' | 'High' | 'Critical';
   team: string[];
   budget?: number;
+  links?: { title: string; url: string }[];
   createdAt: number;
   createdBy: string;
 }

@@ -3,13 +3,9 @@ import { Search, Plus, Filter, MoreVertical, MessageSquare, Paperclip, Clock, Ca
 import { collection, onSnapshot, addDoc, updateDoc, doc, deleteDoc, serverTimestamp } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import { useAuth } from '../contexts/AuthContext';
+import { hasAdminAccess, isSuperAdmin } from '../utils/permissions';
+import { useTeam } from '../contexts/TeamContext';
 import type { Task, User } from '../types';
-
-const TEAM_MEMBERS = [
-  { id: 'u1', name: 'RINSHAN', initial: 'R', color: 'bg-nyghto-orange' },
-  { id: 'u2', name: 'AMAL', initial: 'A', color: 'bg-blue-500' },
-  { id: 'u3', name: 'SHAHAL', initial: 'S', color: 'bg-green-500' },
-];
 
 const COLUMNS = ['To Do', 'In Progress', 'Review', 'Completed'];
 
@@ -23,8 +19,19 @@ const getPriorityColor = (priority: string) => {
   }
 };
 
+const formatDate = (dateStr: string) => {
+  if (!dateStr || dateStr === 'Today') return 'Today';
+  const parts = dateStr.split('-');
+  if (parts.length === 3) {
+    const date = new Date(parseInt(parts[0]), parseInt(parts[1]) - 1, parseInt(parts[2]));
+    return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+  }
+  return dateStr;
+};
+
 export default function Tasks() {
-  const { userData } = useAuth();
+  const { user, userData } = useAuth();
+  const { teamMembers } = useTeam();
   const [tasks, setTasks] = useState<Task[]>([]);
   const [activeDropdown, setActiveDropdown] = useState<string | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -33,7 +40,8 @@ export default function Tasks() {
   const [newTaskProject, setNewTaskProject] = useState('');
   const [newTaskPriority, setNewTaskPriority] = useState<Task['priority']>('Medium');
   const [newTaskStatus, setNewTaskStatus] = useState('To Do');
-  const [newTaskAssignee, setNewTaskAssignee] = useState(TEAM_MEMBERS[0].id);
+  const [newTaskAssignee, setNewTaskAssignee] = useState('u1');
+  const [newTaskDueDate, setNewTaskDueDate] = useState('');
 
   // Drag and drop state
   const [draggedTaskId, setDraggedTaskId] = useState<string | null>(null);
@@ -62,7 +70,7 @@ export default function Tasks() {
         project: newTaskProject || 'General',
         priority: newTaskPriority,
         status: newTaskStatus,
-        dueDate: 'Today', // Simple default for now
+        dueDate: newTaskDueDate || 'Today',
         comments: 0,
         attachments: 0,
         assigneeId: newTaskAssignee,
@@ -80,7 +88,8 @@ export default function Tasks() {
       setNewTaskTitle('');
       setNewTaskProject('');
       setNewTaskPriority('Medium');
-      setNewTaskAssignee(TEAM_MEMBERS[0].id);
+      setNewTaskAssignee(teamMembers[0]?.id || 'u1');
+      setNewTaskDueDate('');
     } catch (error) {
       console.error("Error adding task: ", error);
     }
@@ -133,7 +142,7 @@ export default function Tasks() {
   const handleDrop = async (e: React.DragEvent, column: string) => {
     e.preventDefault();
     setDraggedOverColumn(null);
-    if (!draggedTaskId) return;
+    if (!draggedTaskId || !hasAdminAccess(user?.email)) return;
 
     const task = tasks.find(t => t.id === draggedTaskId);
     if (task && task.status !== column) {
@@ -165,9 +174,11 @@ export default function Tasks() {
           <h1 className="text-3xl font-bold mb-1 text-theme-text">Tasks</h1>
           <p className="text-theme-muted">Manage your pending and assigned tasks. Powered by Firebase.</p>
         </div>
-        <button onClick={() => { setNewTaskStatus('To Do'); setIsModalOpen(true); }} className="btn-primary flex items-center gap-2 w-fit">
-          <Plus className="w-5 h-5" /> New Task
-        </button>
+        {isSuperAdmin(user?.email) && (
+          <button onClick={() => { setNewTaskStatus('To Do'); setIsModalOpen(true); }} className="btn-primary flex items-center gap-2 w-fit">
+            <Plus className="w-5 h-5" /> New Task
+          </button>
+        )}
       </div>
 
       {/* Kanban Board */}
@@ -195,13 +206,13 @@ export default function Tasks() {
             
             <div className="flex flex-col gap-3 overflow-y-auto pr-1 custom-scrollbar flex-1">
               {board[column].map((task) => {
-                const assignee = TEAM_MEMBERS.find(m => m.id === task.assigneeId) || TEAM_MEMBERS[0];
+                const assignee = teamMembers.find(m => m.id === task.assigneeId) || teamMembers[0];
                 const isDragging = draggedTaskId === task.id;
                 
                 return (
                 <div 
                   key={task.id} 
-                  draggable
+                  draggable={hasAdminAccess(user?.email)}
                   onDragStart={(e) => handleDragStart(e, task.id)}
                   onDragEnd={() => setDraggedTaskId(null)}
                   className={`glass-card p-4 cursor-grab active:cursor-grabbing hover:border-nyghto-orange/30 transition-all group relative ${
@@ -212,15 +223,30 @@ export default function Tasks() {
                     <span className={`text-xs font-medium px-2 py-0.5 rounded ${getPriorityColor(task.priority)}`}>
                       {task.priority}
                     </span>
-                    <button onClick={() => deleteTask(task.id, task.title)} className="text-theme-muted hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity" title="Delete Task">
-                      <X className="w-4 h-4" />
-                    </button>
+                    {isSuperAdmin(user?.email) && (
+                      <button onClick={() => deleteTask(task.id, task.title)} className="text-theme-muted hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity" title="Delete Task">
+                        <X className="w-4 h-4" />
+                      </button>
+                    )}
                   </div>
                   
                   <h4 className={`font-medium text-sm mb-1 transition-colors ${task.status === 'Completed' ? 'text-green-500' : 'group-hover:text-nyghto-orange text-theme-text'}`}>
                     {task.title}
                   </h4>
-                  <p className="text-xs text-theme-muted mb-4">{task.project}</p>
+                  <p className="text-xs text-theme-muted mb-3">{task.project}</p>
+
+                  <div className="mb-4">
+                    <div className="flex justify-between text-[10px] mb-1.5">
+                      <span className="text-theme-muted">Progress</span>
+                      <span className="font-medium text-theme-text">{task.status === 'Completed' ? 100 : task.status === 'In Progress' ? 50 : 0}%</span>
+                    </div>
+                    <div className="w-full bg-theme-border rounded-full h-1.5">
+                      <div 
+                        className="bg-gradient-to-r from-nyghto-orange to-nyghto-yellow h-1.5 rounded-full transition-all duration-1000"
+                        style={{ width: `${task.status === 'Completed' ? 100 : task.status === 'In Progress' ? 50 : 0}%` }}
+                      ></div>
+                    </div>
+                  </div>
                   
                   <div className="flex justify-between items-center pt-3 border-t border-theme-border">
                     <div className="flex items-center gap-3 text-theme-muted">
@@ -239,9 +265,49 @@ export default function Tasks() {
                     </div>
                     
                     <div className="flex items-center gap-2 relative">
-                      <div className={`flex items-center gap-1 text-xs text-theme-muted`}>
-                        <Calendar className="w-3 h-3" />
-                        {task.dueDate}
+                      <div className="relative">
+                        <div 
+                          className="flex items-center gap-1 text-xs text-theme-muted hover:text-nyghto-orange cursor-pointer transition-colors"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setActiveDropdown(`date-${column}-${task.id}`);
+                          }}
+                          title="Click to update due date"
+                        >
+                          <Calendar className="w-3 h-3" />
+                          {formatDate(task.dueDate)}
+                        </div>
+                        
+                        {activeDropdown === `date-${column}-${task.id}` && (
+                          <div 
+                            className="absolute bottom-6 left-0 bg-theme-card border border-theme-border shadow-xl rounded-lg p-3 w-44 z-20"
+                            onClick={(e) => e.stopPropagation()}
+                          >
+                            <label className="block text-xs font-semibold text-theme-muted mb-2">Update Due Date</label>
+                            <input 
+                              type="date"
+                              className="w-full bg-theme-bg border border-theme-border rounded py-1 px-2 text-xs text-theme-text mb-3 focus:outline-none focus:border-nyghto-orange"
+                              defaultValue={task.dueDate !== 'Today' ? task.dueDate : ''}
+                              onChange={async (e) => {
+                                if (!e.target.value) return;
+                                try {
+                                  await updateDoc(doc(db, 'tasks', task.id), { dueDate: e.target.value });
+                                } catch(err) {}
+                              }}
+                              onKeyDown={(e) => {
+                                if (e.key === 'Enter') {
+                                  setActiveDropdown(null);
+                                }
+                              }}
+                            />
+                            <button 
+                              onClick={() => setActiveDropdown(null)}
+                              className="w-full text-center text-xs font-medium bg-white/5 border border-white/10 rounded py-1.5 hover:bg-white/10 transition-colors"
+                            >
+                              Close
+                            </button>
+                          </div>
+                        )}
                       </div>
                       
                       {/* Assignee Avatar with visible button */}
@@ -252,12 +318,21 @@ export default function Tasks() {
                         }}
                         className="flex items-center gap-1.5 cursor-pointer group/assign"
                       >
-                        <div 
-                          className={`w-6 h-6 rounded-full ${assignee.color} flex items-center justify-center text-[10px] font-bold text-white shadow-sm group-hover/assign:ring-2 group-hover/assign:ring-nyghto-orange transition-all`}
-                          title={`Assigned to ${assignee.name}. Click to reassign.`}
-                        >
-                          {assignee.initial}
-                        </div>
+                        {assignee.avatarImage ? (
+                          <img 
+                            src={assignee.avatarImage} 
+                            alt={assignee.name} 
+                            className="w-6 h-6 rounded-full object-cover shadow-sm group-hover/assign:ring-2 group-hover/assign:ring-nyghto-orange transition-all"
+                            title={`Assigned to ${assignee.name}. Click to reassign.`}
+                          />
+                        ) : (
+                          <div 
+                            className={`w-6 h-6 rounded-full ${assignee.color} flex items-center justify-center text-[10px] font-bold text-white shadow-sm group-hover/assign:ring-2 group-hover/assign:ring-nyghto-orange transition-all`}
+                            title={`Assigned to ${assignee.name}. Click to reassign.`}
+                          >
+                            {assignee.initial}
+                          </div>
+                        )}
                         <span className="text-[10px] text-theme-muted group-hover/assign:text-nyghto-orange font-semibold uppercase tracking-wider transition-colors">
                           {assignee.name}
                         </span>
@@ -272,7 +347,7 @@ export default function Tasks() {
                           <div className="px-3 py-1.5 text-xs font-semibold text-theme-muted flex items-center gap-2">
                             <Users className="w-3 h-3" /> Assign To
                           </div>
-                          {TEAM_MEMBERS.map(member => (
+                          {teamMembers.map(member => (
                             <button
                               key={member.id}
                               onClick={() => assignTask(task.id, member.id)}
@@ -291,12 +366,14 @@ export default function Tasks() {
                 </div>
               )})}
               
-              <button 
-                onClick={() => { setNewTaskStatus(column); setIsModalOpen(true); }}
-                className="mt-2 py-2 w-full rounded-lg border border-dashed border-theme-border text-theme-muted text-sm hover:border-nyghto-orange hover:text-nyghto-orange transition-colors flex items-center justify-center gap-2"
-              >
-                <Plus className="w-4 h-4" /> Add Task
-              </button>
+              {column === 'To Do' && (
+                <button 
+                  onClick={() => { setNewTaskStatus(column); setIsModalOpen(true); }}
+                  className="mt-2 py-2 w-full rounded-lg border border-dashed border-theme-border text-theme-muted text-sm hover:border-nyghto-orange hover:text-nyghto-orange transition-colors flex items-center justify-center gap-2"
+                >
+                  <Plus className="w-4 h-4" /> Add Task
+                </button>
+              )}
             </div>
           </div>
         ))}
@@ -348,19 +425,30 @@ export default function Tasks() {
                   <option value="Critical">Critical</option>
                 </select>
               </div>
-              <div>
-                <label className="block text-xs font-semibold text-theme-muted mb-1">Assign To</label>
-                <select 
-                  value={newTaskAssignee}
-                  onChange={(e) => setNewTaskAssignee(e.target.value)}
-                  className="w-full bg-theme-bg border border-theme-border rounded-lg py-2.5 px-3 text-sm text-theme-text focus:outline-none focus:border-nyghto-orange"
-                >
-                  {TEAM_MEMBERS.map(member => (
-                    <option key={member.id} value={member.id}>
-                      {member.name} - {member.role}
-                    </option>
-                  ))}
-                </select>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-xs font-semibold text-theme-muted mb-1">Due Date</label>
+                  <input 
+                    type="date" 
+                    value={newTaskDueDate}
+                    onChange={(e) => setNewTaskDueDate(e.target.value)}
+                    className="w-full bg-theme-bg border border-theme-border rounded-lg py-2.5 px-3 text-sm text-theme-text focus:outline-none focus:border-nyghto-orange"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-theme-muted mb-1">Assign To</label>
+                  <select 
+                    value={newTaskAssignee}
+                    onChange={(e) => setNewTaskAssignee(e.target.value)}
+                    className="w-full bg-theme-bg border border-theme-border rounded-lg py-2.5 px-3 text-sm text-theme-text focus:outline-none focus:border-nyghto-orange"
+                  >
+                    {teamMembers.map(member => (
+                      <option key={member.id} value={member.id}>
+                        {member.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
               </div>
               
               <div className="flex justify-end gap-3 mt-8">
