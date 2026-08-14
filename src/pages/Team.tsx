@@ -24,11 +24,18 @@ export default function Team() {
   const [attendanceRecords, setAttendanceRecords] = useState<any[]>([]);
   const [selectedProfile, setSelectedProfile] = useState<any>(null);
   const [teamStatus, setTeamStatus] = useState<Record<string, string>>({});
+  const [offDayContextMenu, setOffDayContextMenu] = useState<{ x: number; y: number; day: number } | null>(null);
   
   // Form State
   const [hours, setHours] = useState('');
   const [tasksDone, setTasksDone] = useState('');
   const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
+
+  useEffect(() => {
+    const handleClick = () => setOffDayContextMenu(null);
+    window.addEventListener('click', handleClick);
+    return () => window.removeEventListener('click', handleClick);
+  }, []);
 
   useEffect(() => {
     const q = query(collection(db, 'reports'), orderBy('createdAt', 'desc'));
