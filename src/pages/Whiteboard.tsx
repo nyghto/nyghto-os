@@ -43,8 +43,22 @@ export default function Whiteboard() {
       });
     };
 
+    const handleDblClick = () => {
+      const selectedShapes = editor.getSelectedShapes();
+      selectedShapes.forEach(shape => {
+        if (shape.type === 'text') {
+          editor.deleteShape(shape.id);
+        }
+      });
+    };
+
     el.addEventListener('wheel', handleWheel, { passive: false, capture: true });
-    return () => el.removeEventListener('wheel', handleWheel, { capture: true });
+    el.addEventListener('dblclick', handleDblClick, { capture: true });
+    
+    return () => {
+      el.removeEventListener('wheel', handleWheel, { capture: true });
+      el.removeEventListener('dblclick', handleDblClick, { capture: true });
+    };
   }, [editor]);
 
   const scrollProgress = (scrollY / MAX_SCROLL) * 100;
