@@ -17,8 +17,6 @@ export default function Whiteboard() {
     setEditor(ed);
     // Force camera to origin on load
     ed.setCamera({ x: 0, y: 0, z: 1 });
-    // Force dark mode in editor user preferences
-    ed.user.updateUserPreferences({ isDarkMode: true });
     // Set default styling to white
     ed.setStyleForNextShapes(DefaultColorStyle, 'white');
     // Set default tool to text so clicking anywhere starts typing
