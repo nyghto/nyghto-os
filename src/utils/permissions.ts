@@ -19,8 +19,8 @@ export const getUserRole = (email: string | null | undefined, fallbackRole: stri
   if (!email) return fallbackRole;
   const lower = email.toLowerCase();
   if (lower === 'salurinshan9539@gmail.com') return 'CEO';
-  if (lower === 'shahalmuhammed404@gmail.com') return 'CTO';
-  if (lower === 'amaldas.co@gmail.com') return 'CPO';
+  if (lower === 'amaldas.co@gmail.com') return 'CTO';
+  if (lower === 'shahalmuhammed404@gmail.com') return 'CPO';
   if (lower === 'team.nyghto@gmail.com') return 'Super Admin';
   return fallbackRole;
 };
