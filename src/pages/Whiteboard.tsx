@@ -43,21 +43,41 @@ export default function Whiteboard() {
       });
     };
 
-    const handleDblClick = () => {
-      const selectedShapes = editor.getSelectedShapes();
-      selectedShapes.forEach(shape => {
-        if (shape.type === 'text') {
-          editor.deleteShape(shape.id);
+    const handleDblClick = (e: MouseEvent) => {
+      if (!editor) return;
+      editor.setCurrentTool('text');
+      const point = editor.screenToPage({ x: e.clientX, y: e.clientY });
+      const shape = editor.getShapeAtPoint(point);
+      if (shape) {
+        editor.setEditingShape(shape.id);
+      }
+    };
+
+    const handleContextMenu = (e: MouseEvent) => {
+      if (!editor) return;
+      e.preventDefault();
+      e.stopPropagation();
+
+      const point = editor.screenToPage({ x: e.clientX, y: e.clientY });
+      const shape = editor.getShapeAtPoint(point);
+      if (shape) {
+        editor.deleteShapes([shape.id]);
+      } else {
+        const selected = editor.getSelectedShapes();
+        if (selected.length > 0) {
+          editor.deleteShapes(selected.map((s) => s.id));
         }
-      });
+      }
     };
 
     el.addEventListener('wheel', handleWheel, { passive: false, capture: true });
     el.addEventListener('dblclick', handleDblClick, { capture: true });
+    el.addEventListener('contextmenu', handleContextMenu, { capture: true });
     
     return () => {
       el.removeEventListener('wheel', handleWheel, { capture: true });
       el.removeEventListener('dblclick', handleDblClick, { capture: true });
+      el.removeEventListener('contextmenu', handleContextMenu, { capture: true });
     };
   }, [editor]);
 
