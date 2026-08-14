@@ -17,6 +17,8 @@ export default function Whiteboard() {
     setEditor(ed);
     // Force camera to origin on load
     ed.setCamera({ x: 0, y: 0, z: 1 });
+    // Force dark mode in editor user preferences
+    ed.user.updateUserPreferences({ isDarkMode: true });
     // Set default styling to white
     ed.setStyleForNextShapes(DefaultColorStyle, 'white');
     // Set default tool to text so clicking anywhere starts typing
@@ -79,14 +81,19 @@ export default function Whiteboard() {
           .tl-background {
             display: none !important;
           }
-          /* Remove text stroke/shadow */
-          .tl-text-content, .tl-text {
+          /* Remove text stroke/shadow and force text color to pure white */
+          .tl-text-content,
+          .tl-text,
+          .tl-text-input,
+          .tl-text-shape-wrapper,
+          textarea.tl-text-input,
+          .tl-svg-container text {
             -webkit-text-stroke: 0px transparent !important;
             text-shadow: none !important;
-          }
-          /* Force text color to be pure white if not explicitly styled */
-          .tl-text-content {
             color: #ffffff !important;
+            caret-color: #ffffff !important;
+            fill: #ffffff !important;
+            -webkit-text-fill-color: #ffffff !important;
           }
         `}
       </style>
@@ -103,7 +110,7 @@ export default function Whiteboard() {
         <div ref={containerRef} className="flex-1 rounded-2xl overflow-hidden shadow-2xl relative z-10 isolate bg-black border border-white/10" style={{ minHeight: '600px' }}>
           <Tldraw 
             persistenceKey="nyghto-whiteboard-data" 
-            darkMode={theme === 'dark'} 
+            darkMode={true} 
             isReadonly={!hasAdminAccess(user?.email)}
             onMount={handleMount}
             components={{
