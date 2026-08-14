@@ -471,9 +471,9 @@ export default function Team() {
           
           <div className="overflow-x-auto flex-1 custom-scrollbar pb-4 border border-white/10 rounded-xl">
             <table className="w-full text-center text-sm border-collapse">
-              <thead className="bg-white/5 text-gray-300 sticky top-0 z-10 shadow-md">
+              <thead className="bg-white/5 text-gray-300">
                 <tr>
-                  <th className="px-4 py-3 font-semibold border-b border-r border-white/10 sticky left-0 bg-nyghto-dark/95 backdrop-blur-sm z-20 w-24">Date</th>
+                  <th className="px-4 py-3 font-semibold border-b border-r border-white/10 w-24">Date</th>
                   {teamMembers.map(member => (
                     <th key={member.id} className="px-4 py-3 font-semibold border-b border-white/10 min-w-[120px]">
                       <div className="flex flex-col items-center gap-1">
