@@ -31,16 +31,13 @@ export default function Whiteboard() {
         if (shape && shape.type === 'text') {
           ed.setEditingShape(shape.id);
         } else {
+          ed.setCurrentTool('text');
           const id = createShapeId();
           ed.createShape({
             id,
             type: 'text',
             x: point.x,
             y: point.y,
-            props: {
-              text: '',
-              color: 'white',
-            },
           });
           ed.setEditingShape(id);
         }
