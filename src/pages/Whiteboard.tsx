@@ -55,19 +55,25 @@ export default function Whiteboard() {
           [title*="Back to content"] {
             display: none !important;
           }
+          .tl-container {
+            background-color: transparent !important;
+          }
+          .tl-background {
+            display: none !important;
+          }
         `}
       </style>
       <div className="animate-in fade-in duration-500 flex flex-col h-full w-full min-h-[70vh]">
       <div className="mb-6">
-        <h1 className="text-3xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-theme-text to-theme-muted">
-          Whiteboard
+        <h1 className="text-3xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-blue-400 to-blue-600">
+          Blue Board
         </h1>
         <p className="text-theme-muted mt-2">Plan your ideas, draw mind maps, and brainstorm visually.</p>
       </div>
       
       <div className="flex-1 w-full flex gap-4">
         {/* Main Canvas Container */}
-        <div ref={containerRef} className="flex-1 rounded-2xl overflow-hidden glass-card shadow-2xl relative z-10 isolate" style={{ minHeight: '600px' }}>
+        <div ref={containerRef} className="flex-1 rounded-2xl overflow-hidden shadow-2xl relative z-10 isolate bg-gradient-to-br from-blue-900/40 to-blue-500/10 border border-blue-500/30 backdrop-blur-sm" style={{ minHeight: '600px' }}>
           <Tldraw 
             persistenceKey="nyghto-whiteboard-data" 
             darkMode={theme === 'dark'} 
