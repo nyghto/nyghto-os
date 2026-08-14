@@ -84,7 +84,7 @@ export default function Whiteboard() {
       
       <div className="flex-1 w-full flex gap-4">
         {/* Main Canvas Container */}
-        <div ref={containerRef} className="flex-1 rounded-2xl overflow-hidden shadow-2xl relative z-10 isolate bg-gradient-to-br from-blue-900/40 to-blue-500/10 border border-blue-500/30 backdrop-blur-sm" style={{ minHeight: '600px' }}>
+        <div ref={containerRef} className="flex-1 rounded-2xl overflow-hidden shadow-2xl relative z-10 isolate bg-gradient-to-br from-blue-900 to-blue-800 border border-blue-500/30" style={{ minHeight: '600px' }}>
           <Tldraw 
             persistenceKey="nyghto-whiteboard-data" 
             darkMode={theme === 'dark'} 
