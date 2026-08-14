@@ -1,5 +1,5 @@
 import React, { useRef, useEffect, useState } from 'react';
-import { Tldraw, Editor, DefaultColorStyle, createShapeId } from 'tldraw';
+import { Tldraw, Editor, DefaultColorStyle, DefaultHorizontalAlignStyle, createShapeId } from 'tldraw';
 import 'tldraw/tldraw.css';
 import { useTheme } from '../contexts/ThemeContext';
 import { useAuth } from '../contexts/AuthContext';
@@ -17,8 +17,9 @@ export default function Whiteboard() {
     setEditor(ed);
     // Force camera to origin on load
     ed.setCamera({ x: 0, y: 0, z: 1 });
-    // Set default styling to white
+    // Set default styling to white and left-aligned
     ed.setStyleForNextShapes(DefaultColorStyle, 'white');
+    ed.setStyleForNextShapes(DefaultHorizontalAlignStyle, 'start');
     // Set default tool to text so clicking anywhere starts typing
     ed.setCurrentTool('text');
 
@@ -124,6 +125,7 @@ export default function Whiteboard() {
             caret-color: #ffffff !important;
             fill: #ffffff !important;
             -webkit-text-fill-color: #ffffff !important;
+            text-align: left !important;
           }
         `}
       </style>
