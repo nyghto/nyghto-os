@@ -92,15 +92,15 @@ export default function Whiteboard() {
       </style>
       <div className="animate-in fade-in duration-500 flex flex-col h-full w-full min-h-[70vh]">
       <div className="mb-6">
-        <h1 className="text-3xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-blue-400 to-blue-600">
-          Blue Board
+        <h1 className="text-3xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-gray-300 to-gray-500">
+          Black Board
         </h1>
         <p className="text-theme-muted mt-2">Plan your ideas, draw mind maps, and brainstorm visually.</p>
       </div>
       
       <div className="flex-1 w-full flex gap-4">
         {/* Main Canvas Container */}
-        <div ref={containerRef} className="flex-1 rounded-2xl overflow-hidden shadow-2xl relative z-10 isolate bg-gradient-to-br from-blue-900 to-blue-800 border border-blue-500/30" style={{ minHeight: '600px' }}>
+        <div ref={containerRef} className="flex-1 rounded-2xl overflow-hidden shadow-2xl relative z-10 isolate bg-black border border-white/10" style={{ minHeight: '600px' }}>
           <Tldraw 
             persistenceKey="nyghto-whiteboard-data" 
             darkMode={theme === 'dark'} 

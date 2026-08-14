@@ -30,7 +30,7 @@ function Sidebar() {
     { icon: Users, label: 'Team & Reports', path: '/team' },
     { icon: BarChart3, label: 'Analytics', path: '/analytics' },
     { icon: CheckSquare, label: 'Attendance Report', path: '/attendance-report' },
-    { icon: PenTool, label: 'Blue Board', path: '/whiteboard' },
+    { icon: PenTool, label: 'Black Board', path: '/whiteboard' },
   ];
 
   return (
