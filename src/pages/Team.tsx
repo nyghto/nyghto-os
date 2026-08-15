@@ -360,15 +360,24 @@ export default function Team() {
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
           <h1 className="text-3xl font-bold mb-1">Team & Reports</h1>
-          <p className="text-gray-400">Manage your team and view daily work reports.</p>
+          <p className="text-gray-400">Manage your team, view daily work reports, and control workspace access.</p>
         </div>
         {hasAdminAccess(user?.email) && (
-          <button 
-            onClick={() => setIsSubmitting(true)}
-            className="btn-primary flex items-center gap-2 w-fit"
-          >
-            <Plus className="w-5 h-5" /> Submit My Report
-          </button>
+          <div className="flex items-center gap-3">
+            <button 
+              onClick={() => setIsAddingEmail(true)}
+              className="px-4 py-2 bg-white/5 hover:bg-white/10 text-white border border-white/10 rounded-lg text-sm font-medium flex items-center gap-2 transition-all shadow-sm"
+            >
+              <UserPlus className="w-4 h-4 text-nyghto-orange" />
+              Add Allowed Gmail
+            </button>
+            <button 
+              onClick={() => setIsSubmitting(true)}
+              className="btn-primary flex items-center gap-2 text-sm"
+            >
+              <Plus className="w-4 h-4" /> Submit My Report
+            </button>
+          </div>
         )}
       </div>
 
