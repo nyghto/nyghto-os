@@ -125,7 +125,28 @@ export default function Tasks() {
     }
   };
 
+  // Current logged in team member
+  const currentMember = teamMembers.find(
+    m => m.email?.toLowerCase().trim() === user?.email?.toLowerCase().trim()
+  );
+  const currentMemberId = currentMember?.id;
+
+  // Strict Permission Check: Only the assigned user AND Super Admin can edit or drag this task
+  const canManageTask = (task: Task) => {
+    if (!user) return false;
+    if (isMainAdmin) return true; // Super Admin (team.nyghto@gmail.com) can manage all tasks
+    if (currentMemberId && task.assigneeId === currentMemberId) return true;
+    const taskAssignee = teamMembers.find(m => m.id === task.assigneeId);
+    if (taskAssignee?.email?.toLowerCase().trim() === user?.email?.toLowerCase().trim()) return true;
+    return false;
+  };
+
   const handleDragStart = (e: React.DragEvent, taskId: string) => {
+    const task = tasks.find(t => t.id === taskId);
+    if (!task || !canManageTask(task)) {
+      e.preventDefault();
+      return;
+    }
     setDraggedTaskId(taskId);
   };
 
@@ -142,14 +163,16 @@ export default function Tasks() {
   };
 
   const updateTaskProgress = async (taskId: string, newProgress: number) => {
+    const task = tasks.find(t => t.id === taskId);
+    if (!task || !canManageTask(task)) return;
+
     try {
       const clamped = Math.max(0, Math.min(100, newProgress));
       const updatePayload: any = { progress: clamped };
       if (clamped === 100) {
         updatePayload.status = 'Completed';
       } else if (clamped > 0) {
-        const task = tasks.find(t => t.id === taskId);
-        if (task && task.status === 'To Do') {
+        if (task.status === 'To Do') {
           updatePayload.status = 'In Progress';
         }
       }
@@ -165,7 +188,12 @@ export default function Tasks() {
     if (!draggedTaskId || !user) return;
 
     const task = tasks.find(t => t.id === draggedTaskId);
-    if (task && task.status !== column) {
+    if (!task || !canManageTask(task)) {
+      setDraggedTaskId(null);
+      return;
+    }
+
+    if (task.status !== column) {
       try {
         const updatePayload: any = { status: column };
         if (column === 'Completed') {
@@ -236,16 +264,21 @@ export default function Tasks() {
             <div className="flex flex-col gap-3 overflow-y-auto pr-1 custom-scrollbar flex-1">
               {board[column].map((task) => {
                 const assignee = teamMembers.find(m => m.id === task.assigneeId) || teamMembers[0];
+                const isPermitted = canManageTask(task);
                 const isDragging = draggedTaskId === task.id;
                 
                 return (
                 <div 
                   key={task.id} 
-                  draggable={!!user}
+                  draggable={isPermitted}
                   onDragStart={(e) => handleDragStart(e, task.id)}
                   onDragEnd={() => setDraggedTaskId(null)}
-                  className={`glass-card p-4 cursor-grab active:cursor-grabbing hover:border-nyghto-orange/30 transition-all group relative ${
-                    isDragging ? 'opacity-40 scale-95 border-nyghto-orange border-dashed' : 'hover:-translate-y-0.5'
+                  className={`glass-card p-4 transition-all group relative ${
+                    isPermitted 
+                      ? 'cursor-grab active:cursor-grabbing hover:border-nyghto-orange/30' 
+                      : 'cursor-default opacity-85 border-white/5'
+                  } ${
+                    isDragging ? 'opacity-40 scale-95 border-nyghto-orange border-dashed' : isPermitted ? 'hover:-translate-y-0.5' : ''
                   }`}
                 >
                   <div className="flex justify-between items-start mb-2">
@@ -259,7 +292,7 @@ export default function Tasks() {
                     )}
                   </div>
                   
-                  <h4 className={`font-medium text-sm mb-1 transition-colors ${task.status === 'Completed' ? 'text-green-500' : 'group-hover:text-nyghto-orange text-theme-text'}`}>
+                  <h4 className={`font-medium text-sm mb-1 transition-colors ${task.status === 'Completed' ? 'text-green-500' : isPermitted ? 'group-hover:text-nyghto-orange text-theme-text' : 'text-theme-text'}`}>
                     {task.title}
                   </h4>
                   <p className="text-xs text-theme-muted mb-3">{task.project}</p>
@@ -273,27 +306,36 @@ export default function Tasks() {
                       <div className="mb-4 relative">
                         <div className="flex justify-between text-[10px] mb-1.5 items-center">
                           <span className="text-theme-muted font-medium">Progress</span>
-                          <button
-                            type="button"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              setActiveDropdown(activeDropdown === `progress-${task.id}` ? null : `progress-${task.id}`);
-                            }}
-                            className="font-bold text-theme-text hover:text-nyghto-orange px-1.5 py-0.5 rounded bg-white/5 hover:bg-white/10 border border-white/10 transition-all flex items-center gap-1 cursor-pointer"
-                            title="Click to edit progress percentage (%)"
-                          >
-                            <span>{currentProgress}%</span>
-                            <span className="text-[9px] text-nyghto-orange">✏️</span>
-                          </button>
+                          {isPermitted ? (
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setActiveDropdown(activeDropdown === `progress-${task.id}` ? null : `progress-${task.id}`);
+                              }}
+                              className="font-bold text-theme-text hover:text-nyghto-orange px-1.5 py-0.5 rounded bg-white/5 hover:bg-white/10 border border-white/10 transition-all flex items-center gap-1 cursor-pointer"
+                              title="Click to edit progress percentage (%)"
+                            >
+                              <span>{currentProgress}%</span>
+                              <span className="text-[9px] text-nyghto-orange">✏️</span>
+                            </button>
+                          ) : (
+                            <span className="font-bold text-theme-muted px-1.5 py-0.5">
+                              {currentProgress}%
+                            </span>
+                          )}
                         </div>
 
                         <div 
                           onClick={(e) => {
+                            if (!isPermitted) return;
                             e.stopPropagation();
                             setActiveDropdown(activeDropdown === `progress-${task.id}` ? null : `progress-${task.id}`);
                           }}
-                          className="w-full bg-theme-border rounded-full h-2 cursor-pointer hover:opacity-90 transition-opacity relative"
-                          title="Click to change progress"
+                          className={`w-full bg-theme-border rounded-full h-2 relative ${
+                            isPermitted ? 'cursor-pointer hover:opacity-90' : 'cursor-default'
+                          }`}
+                          title={isPermitted ? "Click to change progress" : undefined}
                         >
                           <div 
                             className="bg-gradient-to-r from-nyghto-orange to-nyghto-yellow h-2 rounded-full transition-all duration-300 shadow-sm"
@@ -302,7 +344,7 @@ export default function Tasks() {
                         </div>
 
                         {/* Progress Slider Popover */}
-                        {activeDropdown === `progress-${task.id}` && (
+                        {isPermitted && activeDropdown === `progress-${task.id}` && (
                           <div 
                             className="absolute bottom-full left-0 w-full mb-2 bg-[#181822] border border-white/20 rounded-xl shadow-2xl p-3 z-30 animate-in fade-in zoom-in-95"
                             onClick={(e) => e.stopPropagation()}
@@ -374,25 +416,28 @@ export default function Tasks() {
                     <div className="flex items-center gap-2 relative">
                       <div className="relative">
                         <div 
-                          className="flex items-center gap-1 text-xs text-theme-muted hover:text-nyghto-orange cursor-pointer transition-colors"
+                          className={`flex items-center gap-1 text-xs text-theme-muted transition-colors ${
+                            isPermitted ? 'hover:text-nyghto-orange cursor-pointer' : 'cursor-default'
+                          }`}
                           onClick={(e) => {
+                            if (!isPermitted) return;
                             e.stopPropagation();
                             setActiveDropdown(`date-${column}-${task.id}`);
                           }}
-                          title="Click to update due date"
+                          title={isPermitted ? "Click to update due date" : undefined}
                         >
                           <Calendar className="w-3 h-3" />
                           {formatDate(task.dueDate)}
                         </div>
                         
-                        {activeDropdown === `date-${column}-${task.id}` && (
+                        {isPermitted && activeDropdown === `date-${column}-${task.id}` && (
                           <div 
                             className="absolute bottom-6 left-0 bg-theme-card border border-theme-border shadow-xl rounded-lg p-3 w-44 z-20"
                             onClick={(e) => e.stopPropagation()}
                           >
                             <label className="block text-xs font-semibold text-theme-muted mb-2">Update Due Date</label>
                             <input 
-                              type="date"
+                              type="date" 
                               className="w-full bg-theme-bg border border-theme-border rounded py-1 px-2 text-xs text-theme-text mb-3 focus:outline-none focus:border-nyghto-orange"
                               defaultValue={task.dueDate !== 'Today' ? task.dueDate : ''}
                               onChange={async (e) => {
@@ -417,36 +462,36 @@ export default function Tasks() {
                         )}
                       </div>
                       
-                      {/* Assignee Avatar with visible button */}
+                      {/* Assignee Avatar with button */}
                       <div 
                         onClick={(e) => {
+                          if (!isMainAdmin) return;
                           e.stopPropagation();
                           setActiveDropdown(`${column}-${task.id}`);
                         }}
-                        className="flex items-center gap-1.5 cursor-pointer group/assign"
+                        className={`flex items-center gap-1.5 ${isMainAdmin ? 'cursor-pointer group/assign' : 'cursor-default'}`}
+                        title={isMainAdmin ? `Assigned to ${assignee.name}. Click to reassign.` : `Assigned to ${assignee.name}`}
                       >
                         {assignee.avatarImage ? (
                           <img 
                             src={assignee.avatarImage} 
                             alt={assignee.name} 
-                            className="w-6 h-6 rounded-full object-cover shadow-sm group-hover/assign:ring-2 group-hover/assign:ring-nyghto-orange transition-all"
-                            title={`Assigned to ${assignee.name}. Click to reassign.`}
+                            className={`w-6 h-6 rounded-full object-cover shadow-sm ${isMainAdmin ? 'group-hover/assign:ring-2 group-hover/assign:ring-nyghto-orange transition-all' : ''}`}
                           />
                         ) : (
                           <div 
-                            className={`w-6 h-6 rounded-full ${assignee.color} flex items-center justify-center text-[10px] font-bold text-white shadow-sm group-hover/assign:ring-2 group-hover/assign:ring-nyghto-orange transition-all`}
-                            title={`Assigned to ${assignee.name}. Click to reassign.`}
+                            className={`w-6 h-6 rounded-full ${assignee.color} flex items-center justify-center text-[10px] font-bold text-white shadow-sm ${isMainAdmin ? 'group-hover/assign:ring-2 group-hover/assign:ring-nyghto-orange transition-all' : ''}`}
                           >
                             {assignee.initial}
                           </div>
                         )}
-                        <span className="text-[10px] text-theme-muted group-hover/assign:text-nyghto-orange font-semibold uppercase tracking-wider transition-colors">
+                        <span className={`text-[10px] text-theme-muted font-semibold uppercase tracking-wider ${isMainAdmin ? 'group-hover/assign:text-nyghto-orange transition-colors' : ''}`}>
                           {assignee.name}
                         </span>
                       </div>
 
-                      {/* Dropdown Menu */}
-                      {activeDropdown === `${column}-${task.id}` && (
+                      {/* Dropdown Menu (Only Super Admin can reassign) */}
+                      {isMainAdmin && activeDropdown === `${column}-${task.id}` && (
                         <div 
                           className="absolute bottom-8 right-0 bg-theme-card border border-theme-border shadow-xl rounded-lg w-48 py-2 z-10"
                           onClick={(e) => e.stopPropagation()}
