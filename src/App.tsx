@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { BrowserRouter, Routes, Route, Link, useLocation, Navigate } from 'react-router-dom';
-import { LayoutDashboard, FolderKanban, CheckSquare, Users, BarChart3, Settings, Bell, Search, LogOut, Sun, Moon, X, Palette, PenTool, ArrowLeftRight, Check } from 'lucide-react';
+import { LayoutDashboard, FolderKanban, CheckSquare, Users, BarChart3, Settings, Bell, Search, LogOut, Sun, Moon, X, Palette, PenTool, Shield, Key, Eye, EyeOff, Check, Lock, ShieldCheck } from 'lucide-react';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { ThemeProvider, useTheme, THEME_COLORS } from './contexts/ThemeContext';
 import type { ThemeColorName } from './contexts/ThemeContext';
@@ -19,21 +19,18 @@ import Whiteboard from './pages/Whiteboard';
 import Login from './pages/Login';
 import { motion, AnimatePresence } from 'framer-motion';
 
-const FOUNDER_ACCOUNTS = [
-  { email: 'team.nyghto@gmail.com', name: 'Nyghto Admin', role: 'Super Admin', avatar: null },
-  { email: 'salurinshan9539@gmail.com', name: 'Salu Rinshan', role: 'CEO', avatar: '/rinshan.jpg' },
-  { email: 'amaldas.co@gmail.com', name: 'Amal Das', role: 'CTO', avatar: '/amal.jpg' },
-  { email: 'shahalmuhammed404@gmail.com', name: 'Shahal Muhammed', role: 'CPO', avatar: '/shahal.jpg' },
-];
-
 function Sidebar() {
   const location = useLocation();
   const { user, userData, logout, switchedEmail, effectiveEmail, effectiveRole, effectiveName, effectiveAvatar, switchAccount } = useAuth();
-  const [isSwitchMenuOpen, setIsSwitchMenuOpen] = useState(false);
+  const [isPassModalOpen, setIsPassModalOpen] = useState(false);
+  const [adminPass, setAdminPass] = useState('');
+  const [showPass, setShowPass] = useState(false);
+  const [passError, setPassError] = useState('');
   
   const role = effectiveRole || getUserRole(user?.email, userData?.role);
   const name = effectiveName || getUserName(user?.email, userData?.name);
   const avatar = effectiveAvatar || getUserAvatar(user?.email);
+  const isCurrentlyAdminMode = effectiveEmail?.toLowerCase() === 'team.nyghto@gmail.com';
   
   const navItems = [
     { icon: LayoutDashboard, label: 'Dashboard', path: '/' },
@@ -44,6 +41,23 @@ function Sidebar() {
     { icon: CheckSquare, label: 'Attendance Report', path: '/attendance-report' },
     { icon: PenTool, label: 'Black Board', path: '/whiteboard' },
   ];
+
+  const handleVerifyAndSwitch = (e: React.FormEvent) => {
+    e.preventDefault();
+    setPassError('');
+    const cleanPass = adminPass.trim();
+
+    // Accepted Super Admin security passwords
+    const validPasswords = ['nyghto@2026', 'nyghto2026', 'admin2026', 'nyra2026', 'teamnyghto'];
+
+    if (validPasswords.includes(cleanPass)) {
+      switchAccount('team.nyghto@gmail.com');
+      setIsPassModalOpen(false);
+      setAdminPass('');
+    } else {
+      setPassError('Incorrect Admin Password! Access Denied.');
+    }
+  };
 
   return (
     <div className="w-64 h-screen glass-card rounded-none border-y-0 border-l-0 flex flex-col p-4 fixed left-0 top-0 z-50">
@@ -77,87 +91,38 @@ function Sidebar() {
       </nav>
       
       <div className="mt-auto pt-3 flex flex-col gap-2">
-        {/* Switch Account Option for the 4 Core Founders */}
-        {isCoreFounder(user?.email) && (
-          <div className="relative">
-            <button
-              onClick={() => setIsSwitchMenuOpen(!isSwitchMenuOpen)}
-              className={`w-full flex items-center justify-between px-3 py-2 rounded-lg text-xs font-semibold transition-all border ${
-                switchedEmail 
-                  ? 'bg-nyghto-orange/15 text-nyghto-orange border-nyghto-orange/40 shadow-[0_0_10px_rgba(255,107,0,0.15)]' 
-                  : 'bg-white/5 hover:bg-white/10 text-gray-300 hover:text-white border-white/10'
-              }`}
-            >
-              <div className="flex items-center gap-2">
-                <ArrowLeftRight className="w-3.5 h-3.5 text-nyghto-orange" />
-                <span>Switch Acc</span>
-              </div>
-              <span className="text-[10px] text-nyghto-orange font-bold uppercase tracking-wider">
-                {switchedEmail ? 'Active' : '4 Gmails'}
-              </span>
-            </button>
-
-            {isSwitchMenuOpen && (
-              <div className="absolute bottom-full left-0 w-full mb-2 bg-[#151520] border border-white/20 rounded-xl shadow-2xl p-2 z-50 animate-in fade-in slide-in-from-bottom-2">
-                <div className="text-[10px] font-bold text-gray-400 uppercase tracking-wider px-2 py-1.5 mb-1 border-b border-white/10 flex items-center justify-between">
-                  <span>Switch Account</span>
-                  <button onClick={() => setIsSwitchMenuOpen(false)} className="text-gray-400 hover:text-white p-0.5">
-                    <X className="w-3.5 h-3.5" />
-                  </button>
-                </div>
-
-                <div className="space-y-1 max-h-56 overflow-y-auto custom-scrollbar">
-                  {FOUNDER_ACCOUNTS.map(founder => {
-                    const isSelected = effectiveEmail?.toLowerCase() === founder.email.toLowerCase();
-                    return (
-                      <button
-                        key={founder.email}
-                        onClick={() => {
-                          switchAccount(founder.email);
-                          setIsSwitchMenuOpen(false);
-                        }}
-                        className={`w-full flex items-center justify-between p-2 rounded-lg text-left transition-all ${
-                          isSelected 
-                            ? 'bg-nyghto-orange/20 border border-nyghto-orange/50 text-white' 
-                            : 'hover:bg-white/5 text-gray-300 hover:text-white border border-transparent'
-                        }`}
-                      >
-                        <div className="flex items-center gap-2 overflow-hidden">
-                          {founder.avatar ? (
-                            <img src={founder.avatar} alt={founder.name} className="w-6 h-6 rounded-full object-cover shrink-0 border border-white/10" />
-                          ) : (
-                            <div className="w-6 h-6 rounded-full bg-nyghto-orange/20 text-nyghto-orange flex items-center justify-center font-bold text-[10px] shrink-0 border border-nyghto-orange/30">
-                              {founder.name.charAt(0)}
-                            </div>
-                          )}
-                          <div className="overflow-hidden">
-                            <div className="text-xs font-bold truncate text-white">{founder.name}</div>
-                            <div className="text-[10px] text-nyghto-orange font-semibold">{founder.role}</div>
-                          </div>
-                        </div>
-
-                        {isSelected && (
-                          <Check className="w-3.5 h-3.5 text-nyghto-orange shrink-0 ml-1" />
-                        )}
-                      </button>
-                    );
-                  })}
-                </div>
-
-                {switchedEmail && (
-                  <button
-                    onClick={() => {
-                      switchAccount(null);
-                      setIsSwitchMenuOpen(false);
-                    }}
-                    className="w-full text-center text-[11px] text-gray-400 hover:text-white py-1.5 mt-1 pt-1.5 border-t border-white/10 transition-colors"
-                  >
-                    Reset to Logged-in Account
-                  </button>
-                )}
-              </div>
-            )}
-          </div>
+        {/* Switch Account to team.nyghto@gmail.com with Password */}
+        {isCurrentlyAdminMode ? (
+          <button
+            onClick={() => switchAccount(null)}
+            className="w-full flex items-center justify-between px-3 py-2 bg-amber-500/15 hover:bg-amber-500/25 text-amber-300 border border-amber-500/30 rounded-lg text-xs font-semibold transition-all group"
+            title="Exit Super Admin Mode and return to your personal account"
+          >
+            <div className="flex items-center gap-2">
+              <ShieldCheck className="w-3.5 h-3.5 text-amber-400" />
+              <span>Exit Admin Mode</span>
+            </div>
+            <span className="text-[10px] bg-amber-400/20 text-amber-300 px-1.5 py-0.5 rounded font-mono font-bold">
+              Admin Active
+            </span>
+          </button>
+        ) : (
+          <button
+            onClick={() => {
+              setAdminPass('');
+              setPassError('');
+              setIsPassModalOpen(true);
+            }}
+            className="w-full flex items-center justify-between px-3 py-2 bg-white/5 hover:bg-white/10 text-gray-300 hover:text-white border border-white/10 rounded-lg text-xs font-semibold transition-all group"
+          >
+            <div className="flex items-center gap-2">
+              <Key className="w-3.5 h-3.5 text-nyghto-orange group-hover:rotate-45 transition-transform" />
+              <span>Switch to Admin</span>
+            </div>
+            <span className="text-[10px] text-gray-400 font-mono">
+              team.nyghto
+            </span>
+          </button>
         )}
 
         <div className="border-t border-theme-border pt-3">
@@ -189,6 +154,81 @@ function Sidebar() {
           </div>
         </div>
       </div>
+
+      {/* Admin Password Authentication Modal */}
+      {isPassModalOpen && (
+        <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="glass-card w-full max-w-sm p-6 relative border border-white/20 shadow-2xl">
+            <button 
+              onClick={() => setIsPassModalOpen(false)}
+              className="p-1 text-gray-400 hover:text-white rounded-full hover:bg-white/10 absolute right-4 top-4"
+            >
+              <X className="w-5 h-5" />
+            </button>
+
+            <div className="flex items-center gap-3 mb-4">
+              <div className="p-2.5 rounded-xl bg-nyghto-orange/10 border border-nyghto-orange/20 text-nyghto-orange">
+                <Shield className="w-6 h-6" />
+              </div>
+              <div>
+                <h3 className="text-lg font-bold text-white">Super Admin Access</h3>
+                <p className="text-xs text-gray-400">Switch to team.nyghto@gmail.com</p>
+              </div>
+            </div>
+
+            <p className="text-xs text-gray-300 mb-4 leading-relaxed">
+              Enter the Super Admin security password to switch identity without signing out from Google.
+            </p>
+
+            {passError && (
+              <div className="mb-4 p-2.5 rounded-lg bg-red-500/10 border border-red-500/20 text-red-400 text-xs font-medium text-center animate-in fade-in">
+                {passError}
+              </div>
+            )}
+
+            <form onSubmit={handleVerifyAndSwitch} className="space-y-4">
+              <div>
+                <label className="block text-xs font-semibold text-gray-400 mb-1.5">Admin Security Password</label>
+                <div className="relative">
+                  <input
+                    type={showPass ? 'text' : 'password'}
+                    value={adminPass}
+                    onChange={(e) => setAdminPass(e.target.value)}
+                    placeholder="Enter security password"
+                    className="w-full bg-white/5 border border-white/10 rounded-lg py-2.5 pl-3 pr-10 text-sm text-white focus:outline-none focus:border-nyghto-orange"
+                    autoFocus
+                    required
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPass(!showPass)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-white"
+                  >
+                    {showPass ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  </button>
+                </div>
+              </div>
+
+              <div className="flex gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setIsPassModalOpen(false)}
+                  className="flex-1 py-2 bg-white/5 hover:bg-white/10 text-gray-300 rounded-lg text-xs font-medium transition-colors border border-white/10"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="flex-1 btn-primary py-2 text-xs font-bold flex items-center justify-center gap-1.5 shadow-md"
+                >
+                  <Key className="w-3.5 h-3.5" />
+                  Unlock & Switch
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
