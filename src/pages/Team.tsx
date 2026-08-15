@@ -2162,6 +2162,11 @@ export default function Team() {
                   Approve & Grant Access
                 </button>
               </div>
+            </form>
+          </div>
+        </div>
+      )}
+
       {/* Office GPS Geofence Settings Modal (Super Admin only) */}
       {isEditingOffice && (
         <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
