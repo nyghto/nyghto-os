@@ -30,7 +30,9 @@ const formatDate = (dateStr: string) => {
 };
 
 export default function Tasks() {
-  const { user, userData } = useAuth();
+  const { user, userData, effectiveEmail, effectiveName } = useAuth();
+  const activeEmail = effectiveEmail || user?.email;
+  const isMainAdmin = isSuperAdmin(activeEmail);
   const { teamMembers } = useTeam();
   const [tasks, setTasks] = useState<Task[]>([]);
   const [activeDropdown, setActiveDropdown] = useState<string | null>(null);
@@ -62,7 +64,7 @@ export default function Tasks() {
 
   const handleAddTask = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!isSuperAdmin(user?.email)) return;
+    if (!isMainAdmin) return;
     if (!newTaskTitle.trim()) return;
 
     try {
@@ -175,7 +177,7 @@ export default function Tasks() {
           <h1 className="text-3xl font-bold mb-1 text-theme-text">Tasks</h1>
           <p className="text-theme-muted">Manage your pending and assigned tasks. Powered by Firebase.</p>
         </div>
-        {isSuperAdmin(user?.email) && (
+        {isMainAdmin && (
           <button onClick={() => { setNewTaskStatus('To Do'); setIsModalOpen(true); }} className="btn-primary flex items-center gap-2 w-fit">
             <Plus className="w-5 h-5" /> New Task
           </button>
@@ -224,7 +226,7 @@ export default function Tasks() {
                     <span className={`text-xs font-medium px-2 py-0.5 rounded ${getPriorityColor(task.priority)}`}>
                       {task.priority}
                     </span>
-                    {isSuperAdmin(user?.email) && (
+                    {isMainAdmin && (
                       <button onClick={() => deleteTask(task.id, task.title)} className="text-theme-muted hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity" title="Delete Task">
                         <X className="w-4 h-4" />
                       </button>
@@ -367,7 +369,7 @@ export default function Tasks() {
                 </div>
               )})}
               
-              {column === 'To Do' && isSuperAdmin(user?.email) && (
+              {column === 'To Do' && isMainAdmin && (
                 <button 
                   onClick={() => { setNewTaskStatus(column); setIsModalOpen(true); }}
                   className="mt-2 py-2 w-full rounded-lg border border-dashed border-theme-border text-theme-muted text-sm hover:border-nyghto-orange hover:text-nyghto-orange transition-colors flex items-center justify-center gap-2"

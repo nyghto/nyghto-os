@@ -2,7 +2,7 @@ import React, { createContext, useContext, useEffect, useState } from 'react';
 import { onAuthStateChanged, signOut, type User } from 'firebase/auth';
 import { auth, db } from '../lib/firebase';
 import { doc, getDoc, setDoc, collection, query, where, getDocs } from 'firebase/firestore';
-import { CORE_EMAILS, getUserRole, getUserName } from '../utils/permissions';
+import { CORE_EMAILS, getUserRole, getUserName, getUserAvatar, isCoreFounder } from '../utils/permissions';
 
 export const getMemberIdByEmail = (email: string | null | undefined): string => {
   if (!email) return 'unknown';
@@ -30,6 +30,12 @@ interface AuthContextType {
   loading: boolean;
   unauthorizedError: string | null;
   pendingUser: PendingUser | null;
+  switchedEmail: string | null;
+  effectiveEmail: string | null;
+  effectiveRole: string;
+  effectiveName: string;
+  effectiveAvatar: string | null;
+  switchAccount: (email: string | null) => void;
   clearUnauthorizedError: () => void;
   clearPendingUser: () => void;
   requestAccess: (userObj: PendingUser) => Promise<void>;
@@ -42,6 +48,12 @@ const AuthContext = createContext<AuthContextType>({
   loading: true,
   unauthorizedError: null,
   pendingUser: null,
+  switchedEmail: null,
+  effectiveEmail: null,
+  effectiveRole: 'Employee',
+  effectiveName: 'User',
+  effectiveAvatar: null,
+  switchAccount: () => {},
   clearUnauthorizedError: () => {},
   clearPendingUser: () => {},
   requestAccess: async () => {},
@@ -56,6 +68,24 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   const [loading, setLoading] = useState(true);
   const [unauthorizedError, setUnauthorizedError] = useState<string | null>(null);
   const [pendingUser, setPendingUser] = useState<PendingUser | null>(null);
+  const [switchedEmail, setSwitchedEmail] = useState<string | null>(() => {
+    return localStorage.getItem('nyghto_switched_email') || null;
+  });
+
+  const switchAccount = (email: string | null) => {
+    if (email && isCoreFounder(user?.email) && CORE_EMAILS.includes(email.toLowerCase().trim())) {
+      setSwitchedEmail(email.toLowerCase().trim());
+      localStorage.setItem('nyghto_switched_email', email.toLowerCase().trim());
+    } else {
+      setSwitchedEmail(null);
+      localStorage.removeItem('nyghto_switched_email');
+    }
+  };
+
+  const effectiveEmail = (isCoreFounder(user?.email) && switchedEmail) ? switchedEmail : (user?.email || null);
+  const effectiveRole = getUserRole(effectiveEmail, userData?.role);
+  const effectiveName = getUserName(effectiveEmail, userData?.name);
+  const effectiveAvatar = getUserAvatar(effectiveEmail);
 
   const clearUnauthorizedError = () => setUnauthorizedError(null);
   const clearPendingUser = () => setPendingUser(null);
@@ -226,7 +256,23 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   };
 
   return (
-    <AuthContext.Provider value={{ user, userData, loading, unauthorizedError, clearUnauthorizedError, logout }}>
+    <AuthContext.Provider value={{ 
+      user, 
+      userData, 
+      loading, 
+      unauthorizedError, 
+      pendingUser, 
+      switchedEmail,
+      effectiveEmail,
+      effectiveRole,
+      effectiveName,
+      effectiveAvatar,
+      switchAccount,
+      clearUnauthorizedError, 
+      clearPendingUser, 
+      requestAccess, 
+      logout 
+    }}>
       {!loading && children}
     </AuthContext.Provider>
   );

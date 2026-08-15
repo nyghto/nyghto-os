@@ -1,13 +1,13 @@
 import React, { useState, useEffect } from 'react';
 import { BrowserRouter, Routes, Route, Link, useLocation, Navigate } from 'react-router-dom';
-import { LayoutDashboard, FolderKanban, CheckSquare, Users, BarChart3, Settings, Bell, Search, LogOut, Sun, Moon, X, Palette, PenTool } from 'lucide-react';
+import { LayoutDashboard, FolderKanban, CheckSquare, Users, BarChart3, Settings, Bell, Search, LogOut, Sun, Moon, X, Palette, PenTool, ArrowLeftRight, Check } from 'lucide-react';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { ThemeProvider, useTheme, THEME_COLORS } from './contexts/ThemeContext';
 import type { ThemeColorName } from './contexts/ThemeContext';
 import { TeamProvider } from './contexts/TeamContext';
 import { auth, db } from './lib/firebase';
 import { collection, query, orderBy, limit, onSnapshot, doc, deleteDoc } from 'firebase/firestore';
-import { hasAdminAccess, getUserRole, getUserName, getUserAvatar } from './utils/permissions';
+import { hasAdminAccess, isCoreFounder, getUserRole, getUserName, getUserAvatar } from './utils/permissions';
 import type { Activity } from './types';
 import Dashboard from './pages/Dashboard';
 import Projects from './pages/Projects';
@@ -19,12 +19,21 @@ import Whiteboard from './pages/Whiteboard';
 import Login from './pages/Login';
 import { motion, AnimatePresence } from 'framer-motion';
 
+const FOUNDER_ACCOUNTS = [
+  { email: 'team.nyghto@gmail.com', name: 'Nyghto Admin', role: 'Super Admin', avatar: null },
+  { email: 'salurinshan9539@gmail.com', name: 'Salu Rinshan', role: 'CEO', avatar: '/rinshan.jpg' },
+  { email: 'amaldas.co@gmail.com', name: 'Amal Das', role: 'CTO', avatar: '/amal.jpg' },
+  { email: 'shahalmuhammed404@gmail.com', name: 'Shahal Muhammed', role: 'CPO', avatar: '/shahal.jpg' },
+];
+
 function Sidebar() {
   const location = useLocation();
-  const { user, userData, logout } = useAuth();
-  const role = getUserRole(user?.email, userData?.role);
-  const name = getUserName(user?.email, userData?.name);
-  const avatar = getUserAvatar(user?.email);
+  const { user, userData, logout, switchedEmail, effectiveEmail, effectiveRole, effectiveName, effectiveAvatar, switchAccount } = useAuth();
+  const [isSwitchMenuOpen, setIsSwitchMenuOpen] = useState(false);
+  
+  const role = effectiveRole || getUserRole(user?.email, userData?.role);
+  const name = effectiveName || getUserName(user?.email, userData?.name);
+  const avatar = effectiveAvatar || getUserAvatar(user?.email);
   
   const navItems = [
     { icon: LayoutDashboard, label: 'Dashboard', path: '/' },
@@ -67,18 +76,101 @@ function Sidebar() {
         })}
       </nav>
       
-      <div className="mt-auto pt-4 flex flex-col gap-2">
-        <div className="border-t border-theme-border pt-4 mt-2">
-          <div className="flex items-center justify-between px-2 cursor-pointer hover:bg-theme-border p-2 rounded-lg transition-all duration-300 hover-scale group">
-            <div className="flex items-center gap-3">
+      <div className="mt-auto pt-3 flex flex-col gap-2">
+        {/* Switch Account Option for the 4 Core Founders */}
+        {isCoreFounder(user?.email) && (
+          <div className="relative">
+            <button
+              onClick={() => setIsSwitchMenuOpen(!isSwitchMenuOpen)}
+              className={`w-full flex items-center justify-between px-3 py-2 rounded-lg text-xs font-semibold transition-all border ${
+                switchedEmail 
+                  ? 'bg-nyghto-orange/15 text-nyghto-orange border-nyghto-orange/40 shadow-[0_0_10px_rgba(255,107,0,0.15)]' 
+                  : 'bg-white/5 hover:bg-white/10 text-gray-300 hover:text-white border-white/10'
+              }`}
+            >
+              <div className="flex items-center gap-2">
+                <ArrowLeftRight className="w-3.5 h-3.5 text-nyghto-orange" />
+                <span>Switch Acc</span>
+              </div>
+              <span className="text-[10px] text-nyghto-orange font-bold uppercase tracking-wider">
+                {switchedEmail ? 'Active' : '4 Gmails'}
+              </span>
+            </button>
+
+            {isSwitchMenuOpen && (
+              <div className="absolute bottom-full left-0 w-full mb-2 bg-[#151520] border border-white/20 rounded-xl shadow-2xl p-2 z-50 animate-in fade-in slide-in-from-bottom-2">
+                <div className="text-[10px] font-bold text-gray-400 uppercase tracking-wider px-2 py-1.5 mb-1 border-b border-white/10 flex items-center justify-between">
+                  <span>Switch Account</span>
+                  <button onClick={() => setIsSwitchMenuOpen(false)} className="text-gray-400 hover:text-white p-0.5">
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+
+                <div className="space-y-1 max-h-56 overflow-y-auto custom-scrollbar">
+                  {FOUNDER_ACCOUNTS.map(founder => {
+                    const isSelected = effectiveEmail?.toLowerCase() === founder.email.toLowerCase();
+                    return (
+                      <button
+                        key={founder.email}
+                        onClick={() => {
+                          switchAccount(founder.email);
+                          setIsSwitchMenuOpen(false);
+                        }}
+                        className={`w-full flex items-center justify-between p-2 rounded-lg text-left transition-all ${
+                          isSelected 
+                            ? 'bg-nyghto-orange/20 border border-nyghto-orange/50 text-white' 
+                            : 'hover:bg-white/5 text-gray-300 hover:text-white border border-transparent'
+                        }`}
+                      >
+                        <div className="flex items-center gap-2 overflow-hidden">
+                          {founder.avatar ? (
+                            <img src={founder.avatar} alt={founder.name} className="w-6 h-6 rounded-full object-cover shrink-0 border border-white/10" />
+                          ) : (
+                            <div className="w-6 h-6 rounded-full bg-nyghto-orange/20 text-nyghto-orange flex items-center justify-center font-bold text-[10px] shrink-0 border border-nyghto-orange/30">
+                              {founder.name.charAt(0)}
+                            </div>
+                          )}
+                          <div className="overflow-hidden">
+                            <div className="text-xs font-bold truncate text-white">{founder.name}</div>
+                            <div className="text-[10px] text-nyghto-orange font-semibold">{founder.role}</div>
+                          </div>
+                        </div>
+
+                        {isSelected && (
+                          <Check className="w-3.5 h-3.5 text-nyghto-orange shrink-0 ml-1" />
+                        )}
+                      </button>
+                    );
+                  })}
+                </div>
+
+                {switchedEmail && (
+                  <button
+                    onClick={() => {
+                      switchAccount(null);
+                      setIsSwitchMenuOpen(false);
+                    }}
+                    className="w-full text-center text-[11px] text-gray-400 hover:text-white py-1.5 mt-1 pt-1.5 border-t border-white/10 transition-colors"
+                  >
+                    Reset to Logged-in Account
+                  </button>
+                )}
+              </div>
+            )}
+          </div>
+        )}
+
+        <div className="border-t border-theme-border pt-3">
+          <div className="flex items-center justify-between px-2 hover:bg-theme-border p-2 rounded-lg transition-all duration-300 group">
+            <div className="flex items-center gap-3 overflow-hidden">
               {avatar ? (
                 <img
                   src={avatar}
                   alt={name}
-                  className="w-10 h-10 rounded-full object-cover border border-nyghto-orange/40 shadow-sm"
+                  className="w-9 h-9 rounded-full object-cover border border-nyghto-orange/40 shadow-sm shrink-0"
                 />
               ) : (
-                <div className="w-10 h-10 rounded-full bg-theme-bg flex items-center justify-center text-nyghto-orange border border-theme-border uppercase shadow-sm font-bold">
+                <div className="w-9 h-9 rounded-full bg-theme-bg flex items-center justify-center text-nyghto-orange border border-theme-border uppercase shadow-sm font-bold shrink-0">
                   {name?.charAt(0) || 'U'}
                 </div>
               )}
@@ -89,7 +181,7 @@ function Sidebar() {
             </div>
             <button 
               onClick={() => logout()}
-              className="text-theme-muted hover:text-red-400 opacity-0 group-hover:opacity-100 transition-opacity"
+              className="text-theme-muted hover:text-red-400 opacity-0 group-hover:opacity-100 transition-opacity p-1"
               title="Sign Out"
             >
               <LogOut className="w-4 h-4" />
