@@ -12,6 +12,7 @@ export interface Task {
   project: string;
   priority: 'Low' | 'Medium' | 'High' | 'Critical';
   status: 'To Do' | 'In Progress' | 'Review' | 'Completed';
+  progress?: number;
   dueDate: string;
   comments: number;
   attachments: number;

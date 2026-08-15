@@ -141,6 +141,24 @@ export default function Tasks() {
     setDraggedOverColumn(null);
   };
 
+  const updateTaskProgress = async (taskId: string, newProgress: number) => {
+    try {
+      const clamped = Math.max(0, Math.min(100, newProgress));
+      const updatePayload: any = { progress: clamped };
+      if (clamped === 100) {
+        updatePayload.status = 'Completed';
+      } else if (clamped > 0) {
+        const task = tasks.find(t => t.id === taskId);
+        if (task && task.status === 'To Do') {
+          updatePayload.status = 'In Progress';
+        }
+      }
+      await updateDoc(doc(db, 'tasks', taskId), updatePayload);
+    } catch (err) {
+      console.error("Error updating task progress:", err);
+    }
+  };
+
   const handleDrop = async (e: React.DragEvent, column: string) => {
     e.preventDefault();
     setDraggedOverColumn(null);
@@ -149,7 +167,16 @@ export default function Tasks() {
     const task = tasks.find(t => t.id === draggedTaskId);
     if (task && task.status !== column) {
       try {
-        await updateDoc(doc(db, 'tasks', draggedTaskId), { status: column });
+        const updatePayload: any = { status: column };
+        if (column === 'Completed') {
+          updatePayload.progress = 100;
+        } else if (column === 'To Do') {
+          updatePayload.progress = 0;
+        } else if (column === 'In Progress' && (task.progress === undefined || task.progress === 0 || task.progress === 100)) {
+          updatePayload.progress = 50;
+        }
+
+        await updateDoc(doc(db, 'tasks', draggedTaskId), updatePayload);
         await addDoc(collection(db, 'activities'), {
           text: `${userData?.name || 'User'} moved task '${task.title}' to ${column}`,
           type: 'task',
@@ -237,18 +264,96 @@ export default function Tasks() {
                   </h4>
                   <p className="text-xs text-theme-muted mb-3">{task.project}</p>
 
-                  <div className="mb-4">
-                    <div className="flex justify-between text-[10px] mb-1.5">
-                      <span className="text-theme-muted">Progress</span>
-                      <span className="font-medium text-theme-text">{task.status === 'Completed' ? 100 : task.status === 'In Progress' ? 50 : 0}%</span>
-                    </div>
-                    <div className="w-full bg-theme-border rounded-full h-1.5">
-                      <div 
-                        className="bg-gradient-to-r from-nyghto-orange to-nyghto-yellow h-1.5 rounded-full transition-all duration-1000"
-                        style={{ width: `${task.status === 'Completed' ? 100 : task.status === 'In Progress' ? 50 : 0}%` }}
-                      ></div>
-                    </div>
-                  </div>
+                  {(() => {
+                    const currentProgress = task.progress !== undefined 
+                      ? task.progress 
+                      : (task.status === 'Completed' ? 100 : task.status === 'In Progress' ? 50 : 0);
+
+                    return (
+                      <div className="mb-4 relative">
+                        <div className="flex justify-between text-[10px] mb-1.5 items-center">
+                          <span className="text-theme-muted font-medium">Progress</span>
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setActiveDropdown(activeDropdown === `progress-${task.id}` ? null : `progress-${task.id}`);
+                            }}
+                            className="font-bold text-theme-text hover:text-nyghto-orange px-1.5 py-0.5 rounded bg-white/5 hover:bg-white/10 border border-white/10 transition-all flex items-center gap-1 cursor-pointer"
+                            title="Click to edit progress percentage (%)"
+                          >
+                            <span>{currentProgress}%</span>
+                            <span className="text-[9px] text-nyghto-orange">✏️</span>
+                          </button>
+                        </div>
+
+                        <div 
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setActiveDropdown(activeDropdown === `progress-${task.id}` ? null : `progress-${task.id}`);
+                          }}
+                          className="w-full bg-theme-border rounded-full h-2 cursor-pointer hover:opacity-90 transition-opacity relative"
+                          title="Click to change progress"
+                        >
+                          <div 
+                            className="bg-gradient-to-r from-nyghto-orange to-nyghto-yellow h-2 rounded-full transition-all duration-300 shadow-sm"
+                            style={{ width: `${currentProgress}%` }}
+                          ></div>
+                        </div>
+
+                        {/* Progress Slider Popover */}
+                        {activeDropdown === `progress-${task.id}` && (
+                          <div 
+                            className="absolute bottom-full left-0 w-full mb-2 bg-[#181822] border border-white/20 rounded-xl shadow-2xl p-3 z-30 animate-in fade-in zoom-in-95"
+                            onClick={(e) => e.stopPropagation()}
+                          >
+                            <div className="flex items-center justify-between text-xs font-bold text-gray-300 mb-2">
+                              <span>Edit Progress (%)</span>
+                              <span className="text-nyghto-orange text-sm font-extrabold">{currentProgress}%</span>
+                            </div>
+
+                            <input 
+                              type="range" 
+                              min="0" 
+                              max="100" 
+                              step="5"
+                              value={currentProgress}
+                              onChange={(e) => updateTaskProgress(task.id, Number(e.target.value))}
+                              className="w-full accent-nyghto-orange cursor-pointer mb-3"
+                            />
+
+                            {/* Quick Presets */}
+                            <div className="grid grid-cols-4 gap-1 mb-2">
+                              {[25, 50, 75, 100].map((pct) => (
+                                <button
+                                  key={pct}
+                                  type="button"
+                                  onClick={() => {
+                                    updateTaskProgress(task.id, pct);
+                                  }}
+                                  className={`py-1 text-[10px] font-bold rounded transition-all ${
+                                    currentProgress === pct 
+                                      ? 'bg-nyghto-orange text-white shadow-sm' 
+                                      : 'bg-white/5 hover:bg-white/10 text-gray-300 border border-white/5'
+                                  }`}
+                                >
+                                  {pct}%
+                                </button>
+                              ))}
+                            </div>
+
+                            <button 
+                              type="button"
+                              onClick={() => setActiveDropdown(null)}
+                              className="w-full text-center text-[11px] font-semibold text-gray-400 hover:text-white py-1 rounded bg-white/5 hover:bg-white/10 transition-colors border border-white/5"
+                            >
+                              Close
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })()}
                   
                   <div className="flex justify-between items-center pt-3 border-t border-theme-border">
                     <div className="flex items-center gap-3 text-theme-muted">
