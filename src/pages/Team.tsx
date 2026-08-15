@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Search, Plus, Filter, FileText, CheckCircle2, Clock, AlertCircle, Users, X, MoreVertical, Eye, Trash2, Pencil, ShieldCheck, UserPlus, Mail, Lock } from 'lucide-react';
+import { Search, Plus, Filter, FileText, CheckCircle2, Clock, AlertCircle, Users, X, MoreVertical, Eye, Trash2, Pencil, ShieldCheck, UserPlus, Mail, Lock, Bell, Check } from 'lucide-react';
 import { collection, onSnapshot, addDoc, query, orderBy, serverTimestamp, doc, updateDoc, deleteDoc, setDoc } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import { useAuth } from '../contexts/AuthContext';
@@ -48,6 +48,10 @@ export default function Team() {
   
   // Authorized Emails (Whitelist) State
   const [authorizedEmails, setAuthorizedEmails] = useState<any[]>([]);
+  const [accessRequests, setAccessRequests] = useState<any[]>([]);
+  const [reviewingRequest, setReviewingRequest] = useState<any | null>(null);
+  const [reqRole, setReqRole] = useState('Employee');
+  const [reqColor, setReqColor] = useState('emerald');
   const [isAddingEmail, setIsAddingEmail] = useState(false);
   const [newEmail, setNewEmail] = useState('');
   const [newName, setNewName] = useState('');
@@ -101,11 +105,19 @@ export default function Team() {
       setAuthorizedEmails(emailsList);
     });
 
+    const unsubscribeAccessRequests = onSnapshot(collection(db, 'access_requests'), (snapshot) => {
+      const reqList = snapshot.docs
+        .map(d => ({ id: d.id, ...d.data() }))
+        .filter((r: any) => r.status === 'pending');
+      setAccessRequests(reqList);
+    });
+
     return () => {
       unsubscribeReports();
       unsubscribeAttendance();
       unsubscribeTeamStatus();
       unsubscribeAuthEmails();
+      unsubscribeAccessRequests();
     };
   }, []);
 
@@ -190,6 +202,77 @@ export default function Team() {
       setEditingAuthEmail(null);
     } catch (err) {
       console.error("Error updating authorized email:", err);
+    }
+  };
+
+  const handleApproveRequest = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!isMainAdmin || !reviewingRequest) return;
+
+    try {
+      const cleanEmail = reviewingRequest.email.toLowerCase().trim();
+      
+      // Check if already authorized
+      if (CORE_EMAILS.includes(cleanEmail) || authorizedEmails.some(a => a.email?.toLowerCase() === cleanEmail)) {
+        await updateDoc(doc(db, 'access_requests', reviewingRequest.id), {
+          status: 'approved',
+          reviewedAt: serverTimestamp(),
+          reviewedBy: currentName
+        });
+        setReviewingRequest(null);
+        return;
+      }
+
+      await addDoc(collection(db, 'authorized_emails'), {
+        email: cleanEmail,
+        name: reviewingRequest.name?.trim() || cleanEmail.split('@')[0],
+        role: reqRole.trim() || 'Employee',
+        color: reqColor || 'emerald',
+        addedBy: currentName,
+        addedByEmail: user?.email || '',
+        createdAt: serverTimestamp()
+      });
+
+      await updateDoc(doc(db, 'access_requests', reviewingRequest.id), {
+        status: 'approved',
+        reviewedAt: serverTimestamp(),
+        reviewedBy: currentName
+      });
+
+      const colorObj = COLOR_PRESETS.find(c => c.id === reqColor) || COLOR_PRESETS[2];
+
+      await addDoc(collection(db, 'activities'), {
+        text: `${currentName} approved access request for ${cleanEmail} (${reqRole.trim() || 'Employee'})`,
+        type: 'general',
+        iconColor: colorObj.text,
+        createdAt: serverTimestamp()
+      });
+
+      setReviewingRequest(null);
+    } catch (err) {
+      console.error("Error approving request:", err);
+    }
+  };
+
+  const handleRejectRequest = async (req: any) => {
+    if (!isMainAdmin) return;
+    if (window.confirm(`Are you sure you want to decline access for "${req.email}"?`)) {
+      try {
+        await updateDoc(doc(db, 'access_requests', req.id), {
+          status: 'rejected',
+          reviewedAt: serverTimestamp(),
+          reviewedBy: currentName
+        });
+
+        await addDoc(collection(db, 'activities'), {
+          text: `${currentName} declined access request from ${req.email}`,
+          type: 'general',
+          iconColor: 'text-red-400',
+          createdAt: serverTimestamp()
+        });
+      } catch (err) {
+        console.error("Error rejecting request:", err);
+      }
     }
   };
 
@@ -448,9 +531,16 @@ export default function Team() {
             <div className={`p-2 rounded-md transition-colors ${tab === t.id ? 'bg-nyghto-orange text-white' : 'bg-white/5 text-gray-400'}`}>
               <t.icon className="w-5 h-5" />
             </div>
-            <div>
-              <div className={`font-bold text-sm ${tab === t.id ? 'text-white' : 'text-gray-300'}`}>{t.id}</div>
-              <div className="text-[11px] text-gray-500 mt-0.5">{t.desc}</div>
+            <div className="flex-1 overflow-hidden">
+              <div className="flex items-center gap-2">
+                <span className={`font-bold text-sm truncate ${tab === t.id ? 'text-white' : 'text-gray-300'}`}>{t.id}</span>
+                {t.id === 'Access Whitelist' && accessRequests.length > 0 && (
+                  <span className="px-1.5 py-0.5 text-[10px] font-bold bg-amber-500 text-black rounded-full animate-bounce shadow-sm shrink-0">
+                    {accessRequests.length}
+                  </span>
+                )}
+              </div>
+              <div className="text-[11px] text-gray-500 mt-0.5 truncate">{t.desc}</div>
             </div>
           </button>
         ))}
@@ -853,6 +943,61 @@ export default function Team() {
               </button>
             )}
           </div>
+
+          {/* Section 0: Pending Access Requests (Accept / Reject) */}
+          {accessRequests.length > 0 && (
+            <div className="glass-card p-6 border-amber-500/30 bg-amber-500/5 shadow-[0_0_20px_rgba(245,158,11,0.05)] animate-in fade-in">
+              <div className="flex items-center justify-between mb-4">
+                <h4 className="text-xs font-bold uppercase tracking-wider text-amber-400 flex items-center gap-2">
+                  <Bell className="w-4 h-4 animate-bounce" />
+                  Pending Access Requests ({accessRequests.length})
+                </h4>
+                <span className="text-xs text-amber-300/80">Users waiting for approval</span>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {accessRequests.map((req: any) => (
+                  <div key={req.id} className="p-4 bg-white/5 border border-amber-500/20 rounded-xl flex items-center justify-between gap-3">
+                    <div className="flex items-center gap-3 overflow-hidden">
+                      {req.photoURL ? (
+                        <img src={req.photoURL} alt={req.name} className="w-10 h-10 rounded-full object-cover border border-amber-400/40 shrink-0" />
+                      ) : (
+                        <div className="w-10 h-10 rounded-full bg-amber-500/20 text-amber-300 font-bold flex items-center justify-center border border-amber-500/30 shrink-0">
+                          {req.name?.charAt(0) || 'U'}
+                        </div>
+                      )}
+                      <div className="overflow-hidden">
+                        <div className="font-bold text-white text-sm truncate">{req.name}</div>
+                        <div className="text-xs text-gray-400 font-mono truncate">{req.email}</div>
+                        <div className="text-[10px] text-amber-400/70 mt-0.5">Requested to join</div>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-2 shrink-0">
+                      <button
+                        onClick={() => {
+                          setReviewingRequest(req);
+                          setReqRole('Employee');
+                          setReqColor('emerald');
+                        }}
+                        className="px-3 py-1.5 bg-emerald-500 hover:bg-emerald-600 text-white rounded-lg text-xs font-bold transition-colors shadow-sm flex items-center gap-1.5"
+                      >
+                        <CheckCircle2 className="w-3.5 h-3.5" />
+                        Accept
+                      </button>
+                      <button
+                        onClick={() => handleRejectRequest(req)}
+                        className="px-3 py-1.5 bg-red-500/10 hover:bg-red-500/20 text-red-400 border border-red-500/20 rounded-lg text-xs font-semibold transition-colors flex items-center gap-1"
+                      >
+                        <X className="w-3.5 h-3.5" />
+                        Reject
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
 
           {/* Section 1: Core Founder Accounts (Protected) */}
           <div className="glass-card p-6">
@@ -1712,6 +1857,119 @@ export default function Team() {
                 })()}
               </div>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Review Access Request Modal */}
+      {reviewingRequest && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="glass-card w-full max-w-md p-6 relative border border-white/20">
+            <button 
+              onClick={() => setReviewingRequest(null)}
+              className="p-1 text-gray-400 hover:text-white rounded-full hover:bg-white/10 absolute right-4 top-4"
+            >
+              <X className="w-5 h-5" />
+            </button>
+
+            <div className="flex items-center gap-3 mb-6">
+              <div className="p-2.5 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-400">
+                <CheckCircle2 className="w-6 h-6" />
+              </div>
+              <div>
+                <h2 className="text-xl font-bold text-white">Approve Access Request</h2>
+                <p className="text-xs text-gray-400">Assign a role and theme color for this member</p>
+              </div>
+            </div>
+
+            {/* Applicant Summary */}
+            <div className="p-4 bg-white/5 rounded-xl border border-white/10 flex items-center gap-3 mb-6">
+              {reviewingRequest.photoURL ? (
+                <img src={reviewingRequest.photoURL} alt={reviewingRequest.name} className="w-12 h-12 rounded-full object-cover border border-white/20" />
+              ) : (
+                <div className="w-12 h-12 rounded-full bg-emerald-500/20 text-emerald-400 font-bold text-lg flex items-center justify-center border border-emerald-500/30">
+                  {reviewingRequest.name?.charAt(0) || 'U'}
+                </div>
+              )}
+              <div className="overflow-hidden">
+                <div className="text-sm font-bold text-white truncate">{reviewingRequest.name}</div>
+                <div className="text-xs text-gray-400 font-mono truncate">{reviewingRequest.email}</div>
+              </div>
+            </div>
+
+            <form onSubmit={handleApproveRequest} className="space-y-4">
+              <div>
+                <label className="block text-xs font-semibold text-gray-400 mb-1.5">Assign Custom Role Title</label>
+                <input 
+                  type="text" 
+                  value={reqRole}
+                  onChange={(e) => setReqRole(e.target.value)}
+                  placeholder="E.g. Lead Flutter Developer, Designer, COO..."
+                  className="w-full bg-white/5 border border-white/10 rounded-lg py-2.5 px-3 text-sm text-white focus:outline-none focus:border-nyghto-orange"
+                  required
+                />
+              </div>
+
+              {/* Quick Role Presets */}
+              <div>
+                <label className="block text-xs font-semibold text-gray-400 mb-1.5">Quick Presets</label>
+                <div className="flex flex-wrap gap-2">
+                  {['Employee', 'Developer', 'Designer', 'Marketing', 'Manager', 'Tester'].map(preset => (
+                    <button
+                      key={preset}
+                      type="button"
+                      onClick={() => setReqRole(preset)}
+                      className={`text-xs px-2.5 py-1 rounded-md border transition-colors ${
+                        reqRole === preset 
+                          ? 'bg-nyghto-orange text-white border-nyghto-orange font-bold' 
+                          : 'bg-white/5 border-white/10 text-gray-300 hover:border-white/20'
+                      }`}
+                    >
+                      {preset}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Color Picker */}
+              <div>
+                <label className="block text-xs font-semibold text-gray-400 mb-1.5">Badge & Avatar Color</label>
+                <div className="grid grid-cols-4 gap-2">
+                  {COLOR_PRESETS.map(color => (
+                    <button
+                      key={color.id}
+                      type="button"
+                      onClick={() => setReqColor(color.id)}
+                      className={`p-2 rounded-lg border text-xs font-medium flex items-center justify-center gap-1.5 transition-all ${
+                        reqColor === color.id
+                          ? `${color.bg} ${color.text} ${color.border} ring-2 ring-white/20 font-bold`
+                          : 'bg-white/5 border-white/10 text-gray-400 hover:border-white/20'
+                      }`}
+                    >
+                      <span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: color.dot }} />
+                      {color.name}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="flex gap-3 pt-4 border-t border-white/10">
+                <button
+                  type="button"
+                  onClick={() => setReviewingRequest(null)}
+                  className="flex-1 py-2.5 bg-white/5 hover:bg-white/10 text-gray-300 rounded-lg text-sm font-medium transition-colors border border-white/10"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="flex-1 py-2.5 bg-emerald-500 hover:bg-emerald-600 text-white rounded-lg text-sm font-bold transition-colors shadow-lg flex items-center justify-center gap-2"
+                >
+                  <Check className="w-4 h-4" />
+                  Approve & Grant Access
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}

@@ -18,12 +18,21 @@ interface UserData {
   name: string;
 }
 
+export interface PendingUser {
+  email: string;
+  name: string;
+  photoURL?: string;
+}
+
 interface AuthContextType {
   user: User | null;
   userData: UserData | null;
   loading: boolean;
   unauthorizedError: string | null;
+  pendingUser: PendingUser | null;
   clearUnauthorizedError: () => void;
+  clearPendingUser: () => void;
+  requestAccess: (userObj: PendingUser) => Promise<void>;
   logout: () => Promise<void>;
 }
 
@@ -32,7 +41,10 @@ const AuthContext = createContext<AuthContextType>({
   userData: null, 
   loading: true,
   unauthorizedError: null,
+  pendingUser: null,
   clearUnauthorizedError: () => {},
+  clearPendingUser: () => {},
+  requestAccess: async () => {},
   logout: async () => {}
 });
 
@@ -43,8 +55,49 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   const [userData, setUserData] = useState<UserData | null>(null);
   const [loading, setLoading] = useState(true);
   const [unauthorizedError, setUnauthorizedError] = useState<string | null>(null);
+  const [pendingUser, setPendingUser] = useState<PendingUser | null>(null);
 
   const clearUnauthorizedError = () => setUnauthorizedError(null);
+  const clearPendingUser = () => setPendingUser(null);
+
+  const requestAccess = async (userObj: PendingUser) => {
+    const cleanEmail = userObj.email.toLowerCase().trim();
+    if (!cleanEmail) return;
+
+    try {
+      const q = query(collection(db, 'access_requests'), where('email', '==', cleanEmail));
+      const snap = await getDocs(q);
+
+      if (!snap.empty) {
+        // Update existing request
+        await setDoc(doc(db, 'access_requests', snap.docs[0].id), {
+          email: cleanEmail,
+          name: userObj.name || cleanEmail.split('@')[0],
+          photoURL: userObj.photoURL || '',
+          status: 'pending',
+          requestedAt: serverTimestamp()
+        }, { merge: true });
+      } else {
+        // Create new request
+        await addDoc(collection(db, 'access_requests'), {
+          email: cleanEmail,
+          name: userObj.name || cleanEmail.split('@')[0],
+          photoURL: userObj.photoURL || '',
+          status: 'pending',
+          requestedAt: serverTimestamp()
+        });
+      }
+
+      await addDoc(collection(db, 'activities'), {
+        text: `${userObj.name || cleanEmail} requested access to Nyghto OS`,
+        type: 'general',
+        iconColor: 'text-amber-400',
+        createdAt: serverTimestamp()
+      });
+    } catch (err) {
+      console.error("Error submitting access request:", err);
+    }
+  };
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
@@ -71,14 +124,20 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         }
 
         if (!isAllowed) {
+          setPendingUser({
+            email,
+            name: currentUser.displayName || email.split('@')[0],
+            photoURL: currentUser.photoURL || undefined
+          });
           await signOut(auth);
           setUser(null);
           setUserData(null);
-          setUnauthorizedError(`Access Denied: "${email}" is not authorized. Please ask an administrator to add your Gmail to the workspace whitelist.`);
+          setUnauthorizedError(`Access Pending: "${email}" is not currently in the authorized whitelist.`);
           setLoading(false);
           return;
         }
 
+        setPendingUser(null);
         setUnauthorizedError(null);
         setUser(currentUser);
 
