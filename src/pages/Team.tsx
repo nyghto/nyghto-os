@@ -4,11 +4,16 @@ import { collection, onSnapshot, addDoc, query, orderBy, serverTimestamp, doc, u
 import { db } from '../lib/firebase';
 import { useAuth } from '../contexts/AuthContext';
 import { useTeam } from '../contexts/TeamContext';
-import { hasAdminAccess } from '../utils/permissions';
+import { hasAdminAccess, getUserRole, getUserName, getUserAvatar } from '../utils/permissions';
+import type { Report } from '../types';
 
 export default function Team() {
   const { userData, user } = useAuth();
   const { teamMembers, updateMemberAvatar } = useTeam();
+  const currentRole = getUserRole(user?.email, userData?.role);
+  const currentName = getUserName(user?.email, userData?.name);
+  const currentAvatar = getUserAvatar(user?.email);
+
   const [tab, setTab] = useState('Daily Reports');
   const [reports, setReports] = useState<Report[]>([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -27,8 +32,8 @@ export default function Team() {
   const [offDayContextMenu, setOffDayContextMenu] = useState<{ x: number; y: number; day: number } | null>(null);
   
   // Form State
-  const [hours, setHours] = useState('');
-  const [tasksDone, setTasksDone] = useState('');
+  const [hours, setHours] = useState('8');
+  const [tasksDone, setTasksDone] = useState('1');
   const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
 
   useEffect(() => {
@@ -72,10 +77,11 @@ export default function Team() {
 
     try {
       await addDoc(collection(db, 'reports'), {
-        employeeId: userData?.id || 'unknown',
-        employeeName: userData?.name || 'User',
-        employeeAvatar: userData?.initial || 'U',
-        role: userData?.role || 'Team Member',
+        employeeId: user?.uid || userData?.id || 'unknown',
+        employeeEmail: user?.email || '',
+        employeeName: currentName,
+        employeeAvatar: currentName.charAt(0) || 'U',
+        role: currentRole,
         date,
         status: 'Submitted',
         hours: parseFloat(hours),
@@ -84,15 +90,15 @@ export default function Team() {
       });
 
       await addDoc(collection(db, 'activities'), {
-        text: `${userData?.name || 'User'} submitted their daily report`,
+        text: `${currentName} (${currentRole}) submitted a report for ${hours}h`,
         type: 'report',
         iconColor: 'text-nyghto-yellow',
         createdAt: serverTimestamp()
       });
 
       setIsSubmitting(false);
-      setHours('');
-      setTasksDone('');
+      setHours('8');
+      setTasksDone('1');
     } catch (error) {
       console.error("Error submitting report:", error);
     }
@@ -375,12 +381,20 @@ export default function Team() {
                     <tr key={report.id} className="hover:bg-white/5 transition-colors group">
                       <td className="px-6 py-4">
                         <div className="flex items-center gap-3">
-                          <div className="w-8 h-8 rounded-full bg-gray-800 border border-nyghto-border flex items-center justify-center font-medium">
-                            {report.employeeAvatar}
-                          </div>
+                          {getUserAvatar(report.employeeEmail) ? (
+                            <img 
+                              src={getUserAvatar(report.employeeEmail)!} 
+                              alt={report.employeeName} 
+                              className="w-8 h-8 rounded-full object-cover border border-nyghto-orange/40 shadow-sm" 
+                            />
+                          ) : (
+                            <div className="w-8 h-8 rounded-full bg-gray-800 border border-nyghto-border flex items-center justify-center font-medium">
+                              {report.employeeAvatar || report.employeeName?.charAt(0) || 'U'}
+                            </div>
+                          )}
                           <div>
                             <div className="font-medium text-white group-hover:text-nyghto-orange transition-colors">{report.employeeName}</div>
-                            <div className="text-xs text-gray-500">{report.role}</div>
+                            <div className="text-xs font-semibold text-nyghto-orange uppercase tracking-wide">{getUserRole(report.employeeEmail, report.role)}</div>
                           </div>
                         </div>
                       </td>
@@ -395,7 +409,13 @@ export default function Team() {
                           {report.status}
                         </span>
                       </td>
-                      <td className="px-6 py-4 font-medium">{report.hours > 0 ? `${report.hours}h` : '-'}</td>
+                      <td className="px-6 py-4 font-medium">
+                        {report.hours > 0 ? (
+                          <span>
+                            {report.hours}h {report.hours >= 8 ? <span className="text-xs text-gray-400">({(report.hours / 8).toFixed(1)}d)</span> : ''}
+                          </span>
+                        ) : '-'}
+                      </td>
                       <td className="px-6 py-4 text-gray-300">{report.tasksDone > 0 ? report.tasksDone : '-'}</td>
                       <td className="px-6 py-4 text-right">
                         <div className="relative inline-block text-left">
@@ -630,15 +650,30 @@ export default function Team() {
 
       {isSubmitting && (
         <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="glass-card w-full max-w-md p-6">
-            <div className="flex justify-between items-center mb-6">
-              <h2 className="text-xl font-bold">Submit Daily Report</h2>
+          <div className="glass-card w-full max-w-md p-6 animate-in zoom-in-95">
+            <div className="flex justify-between items-center mb-5">
+              <h2 className="text-xl font-bold text-white">Submit Work Report</h2>
               <button 
                 onClick={() => setIsSubmitting(false)}
                 className="p-2 text-gray-400 hover:text-white rounded-lg hover:bg-white/5 transition-colors"
               >
                 <X className="w-5 h-5" />
               </button>
+            </div>
+
+            {/* Submitter Profile Info Banner */}
+            <div className="flex items-center gap-3 p-3 bg-white/5 border border-white/10 rounded-xl mb-4">
+              {currentAvatar ? (
+                <img src={currentAvatar} alt={currentName} className="w-10 h-10 rounded-full object-cover border border-nyghto-orange/40 shadow-sm" />
+              ) : (
+                <div className="w-10 h-10 rounded-full bg-theme-bg flex items-center justify-center text-nyghto-orange font-bold border border-theme-border">
+                  {currentName?.charAt(0) || 'U'}
+                </div>
+              )}
+              <div>
+                <div className="font-bold text-white text-sm">{currentName}</div>
+                <div className="text-xs font-bold text-nyghto-orange uppercase tracking-wider">{currentRole}</div>
+              </div>
             </div>
             
             <form onSubmit={handleSubmitReport} className="space-y-4">
@@ -652,32 +687,59 @@ export default function Team() {
                   className="w-full bg-nyghto-dark border border-white/10 rounded-lg py-2 px-3 text-white focus:outline-none focus:border-nyghto-orange" 
                 />
               </div>
-              
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-400 mb-1">Hours Logged</label>
-                  <input 
-                    type="number" 
-                    step="0.5"
-                    min="0"
-                    max="24"
-                    required
-                    value={hours}
-                    onChange={e => setHours(e.target.value)}
-                    className="w-full bg-nyghto-dark border border-white/10 rounded-lg py-2 px-3 text-white focus:outline-none focus:border-nyghto-orange" 
-                  />
+
+              <div>
+                <div className="flex justify-between items-center mb-1">
+                  <label className="text-sm font-medium text-gray-400">Duration / Working Days</label>
+                  <span className="text-xs text-nyghto-orange font-semibold">
+                    {parseFloat(hours) >= 8 ? `${(parseFloat(hours) / 8).toFixed(1)} Days (${hours}h)` : `${hours || 0} hrs`}
+                  </span>
                 </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-400 mb-1">Tasks Completed</label>
-                  <input 
-                    type="number" 
-                    min="0"
-                    required
-                    value={tasksDone}
-                    onChange={e => setTasksDone(e.target.value)}
-                    className="w-full bg-nyghto-dark border border-white/10 rounded-lg py-2 px-3 text-white focus:outline-none focus:border-nyghto-orange" 
-                  />
+                {/* Day Presets */}
+                <div className="flex flex-wrap gap-1.5 mb-2">
+                  {[
+                    { label: '1 Day', h: '8' },
+                    { label: '2 Days', h: '16' },
+                    { label: '5 Days', h: '40' },
+                    { label: '10 Days', h: '80' },
+                    { label: '20 Days', h: '160' },
+                  ].map(preset => (
+                    <button
+                      key={preset.label}
+                      type="button"
+                      onClick={() => setHours(preset.h)}
+                      className={`px-2.5 py-1 text-xs font-semibold rounded-lg border transition-all ${
+                        hours === preset.h
+                          ? 'bg-nyghto-orange text-white border-nyghto-orange shadow-[0_0_10px_rgba(255,107,0,0.4)]'
+                          : 'bg-white/5 text-gray-300 border-white/10 hover:bg-white/10 hover:text-white'
+                      }`}
+                    >
+                      {preset.label}
+                    </button>
+                  ))}
                 </div>
+                <input 
+                  type="number" 
+                  step="0.5"
+                  min="0.5"
+                  required
+                  value={hours}
+                  onChange={e => setHours(e.target.value)}
+                  placeholder="Hours (e.g. 8 for 1 day, 80 for 10 days, 160 for 20 days)"
+                  className="w-full bg-nyghto-dark border border-white/10 rounded-lg py-2 px-3 text-white focus:outline-none focus:border-nyghto-orange" 
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-400 mb-1">Tasks Completed</label>
+                <input 
+                  type="number" 
+                  min="0"
+                  required
+                  value={tasksDone}
+                  onChange={e => setTasksDone(e.target.value)}
+                  className="w-full bg-nyghto-dark border border-white/10 rounded-lg py-2 px-3 text-white focus:outline-none focus:border-nyghto-orange" 
+                />
               </div>
 
               <div className="pt-4 flex justify-end gap-3">
@@ -703,9 +765,9 @@ export default function Team() {
       {/* Edit Report Modal */}
       {editingReport && (
         <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="glass-card w-full max-w-md p-6">
+          <div className="glass-card w-full max-w-md p-6 animate-in zoom-in-95">
             <div className="flex justify-between items-center mb-6">
-              <h2 className="text-xl font-bold">Edit Report</h2>
+              <h2 className="text-xl font-bold text-white">Edit Report</h2>
               <button 
                 onClick={() => setEditingReport(null)}
                 className="p-2 text-gray-400 hover:text-white rounded-lg hover:bg-white/5 transition-colors"
@@ -715,31 +777,56 @@ export default function Team() {
             </div>
             
             <form onSubmit={handleUpdateReport} className="space-y-4">
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-400 mb-1">Hours Logged</label>
-                  <input 
-                    type="number" 
-                    step="0.5"
-                    min="0"
-                    max="24"
-                    required
-                    value={editHours}
-                    onChange={e => setEditHours(e.target.value)}
-                    className="w-full bg-nyghto-dark border border-white/10 rounded-lg py-2 px-3 text-white focus:outline-none focus:border-nyghto-orange" 
-                  />
+              <div>
+                <div className="flex justify-between items-center mb-1">
+                  <label className="text-sm font-medium text-gray-400">Duration / Working Days</label>
+                  <span className="text-xs text-nyghto-orange font-semibold">
+                    {parseFloat(editHours) >= 8 ? `${(parseFloat(editHours) / 8).toFixed(1)} Days (${editHours}h)` : `${editHours || 0} hrs`}
+                  </span>
                 </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-400 mb-1">Tasks Completed</label>
-                  <input 
-                    type="number" 
-                    min="0"
-                    required
-                    value={editTasksDone}
-                    onChange={e => setEditTasksDone(e.target.value)}
-                    className="w-full bg-nyghto-dark border border-white/10 rounded-lg py-2 px-3 text-white focus:outline-none focus:border-nyghto-orange" 
-                  />
+                <div className="flex flex-wrap gap-1.5 mb-2">
+                  {[
+                    { label: '1 Day', h: '8' },
+                    { label: '2 Days', h: '16' },
+                    { label: '5 Days', h: '40' },
+                    { label: '10 Days', h: '80' },
+                    { label: '20 Days', h: '160' },
+                  ].map(preset => (
+                    <button
+                      key={preset.label}
+                      type="button"
+                      onClick={() => setEditHours(preset.h)}
+                      className={`px-2.5 py-1 text-xs font-semibold rounded-lg border transition-all ${
+                        editHours === preset.h
+                          ? 'bg-nyghto-orange text-white border-nyghto-orange shadow-[0_0_10px_rgba(255,107,0,0.4)]'
+                          : 'bg-white/5 text-gray-300 border-white/10 hover:bg-white/10 hover:text-white'
+                      }`}
+                    >
+                      {preset.label}
+                    </button>
+                  ))}
                 </div>
+                <input 
+                  type="number" 
+                  step="0.5"
+                  min="0.5"
+                  required
+                  value={editHours}
+                  onChange={e => setEditHours(e.target.value)}
+                  className="w-full bg-nyghto-dark border border-white/10 rounded-lg py-2 px-3 text-white focus:outline-none focus:border-nyghto-orange" 
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-400 mb-1">Tasks Completed</label>
+                <input 
+                  type="number" 
+                  min="0"
+                  required
+                  value={editTasksDone}
+                  onChange={e => setEditTasksDone(e.target.value)}
+                  className="w-full bg-nyghto-dark border border-white/10 rounded-lg py-2 px-3 text-white focus:outline-none focus:border-nyghto-orange" 
+                />
               </div>
 
               <div className="pt-4 flex justify-end gap-3">
