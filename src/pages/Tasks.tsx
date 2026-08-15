@@ -62,6 +62,7 @@ export default function Tasks() {
 
   const handleAddTask = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!isSuperAdmin(user?.email)) return;
     if (!newTaskTitle.trim()) return;
 
     try {
@@ -366,7 +367,7 @@ export default function Tasks() {
                 </div>
               )})}
               
-              {column === 'To Do' && (
+              {column === 'To Do' && isSuperAdmin(user?.email) && (
                 <button 
                   onClick={() => { setNewTaskStatus(column); setIsModalOpen(true); }}
                   className="mt-2 py-2 w-full rounded-lg border border-dashed border-theme-border text-theme-muted text-sm hover:border-nyghto-orange hover:text-nyghto-orange transition-colors flex items-center justify-center gap-2"
