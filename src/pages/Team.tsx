@@ -157,11 +157,13 @@ export default function Team() {
 
   const handleRevokeAccess = async (docId: string, email: string) => {
     if (!isMainAdmin) return;
-    if (window.confirm(`Are you sure you want to revoke access for "${email}"? They will be immediately blocked from accessing Nyghto OS.`)) {
+    if (window.confirm(`Are you sure you want to remove "${email}" from the workspace? They will be immediately blocked and removed from Team Members.`)) {
       try {
         await deleteDoc(doc(db, 'authorized_emails', docId));
+        const memberId = email.toLowerCase().trim().replace(/[@.]/g, '_');
+        await deleteDoc(doc(db, 'teamStatus', memberId)).catch(() => {});
         await addDoc(collection(db, 'activities'), {
-          text: `${currentName} revoked access for ${email}`,
+          text: `${currentName} removed ${email} from workspace access`,
           type: 'general',
           iconColor: 'text-red-400',
           createdAt: serverTimestamp()
