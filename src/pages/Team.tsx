@@ -7,6 +7,17 @@ import { useTeam } from '../contexts/TeamContext';
 import { hasAdminAccess, isSuperAdmin, isCoreFounder, CORE_EMAILS, getUserRole, getUserName, getUserAvatar } from '../utils/permissions';
 import type { Report } from '../types';
 
+const COLOR_PRESETS = [
+  { id: 'orange', name: 'Orange', bg: 'bg-nyghto-orange/20', text: 'text-nyghto-orange', border: 'border-nyghto-orange/30', dot: '#ff6b00' },
+  { id: 'blue', name: 'Blue', bg: 'bg-blue-500/20', text: 'text-blue-400', border: 'border-blue-500/30', dot: '#3b82f6' },
+  { id: 'emerald', name: 'Emerald', bg: 'bg-emerald-500/20', text: 'text-emerald-400', border: 'border-emerald-500/30', dot: '#10b981' },
+  { id: 'purple', name: 'Purple', bg: 'bg-purple-500/20', text: 'text-purple-400', border: 'border-purple-500/30', dot: '#a855f7' },
+  { id: 'yellow', name: 'Yellow', bg: 'bg-yellow-500/20', text: 'text-yellow-400', border: 'border-yellow-500/30', dot: '#eab308' },
+  { id: 'rose', name: 'Rose', bg: 'bg-rose-500/20', text: 'text-rose-400', border: 'border-rose-500/30', dot: '#f43f5e' },
+  { id: 'cyan', name: 'Cyan', bg: 'bg-cyan-500/20', text: 'text-cyan-400', border: 'border-cyan-500/30', dot: '#06b6d4' },
+  { id: 'indigo', name: 'Indigo', bg: 'bg-indigo-500/20', text: 'text-indigo-400', border: 'border-indigo-500/30', dot: '#6366f1' },
+];
+
 export default function Team() {
   const { userData, user } = useAuth();
   const { teamMembers, updateMemberAvatar } = useTeam();
@@ -41,6 +52,7 @@ export default function Team() {
   const [newEmail, setNewEmail] = useState('');
   const [newName, setNewName] = useState('');
   const [newRole, setNewRole] = useState('Employee');
+  const [newColor, setNewColor] = useState('emerald');
 
   // Form State
   const [reportTitle, setReportTitle] = useState('');
@@ -113,21 +125,25 @@ export default function Team() {
         email: emailClean,
         name: newName.trim() || emailClean.split('@')[0],
         role: newRole.trim() || 'Employee',
+        color: newColor || 'emerald',
         addedBy: currentName,
         addedByEmail: user?.email || '',
         createdAt: serverTimestamp()
       });
 
+      const colorObj = COLOR_PRESETS.find(c => c.id === newColor) || COLOR_PRESETS[2];
+
       await addDoc(collection(db, 'activities'), {
-        text: `${currentName} granted workspace access to ${emailClean} (${newRole})`,
+        text: `${currentName} granted workspace access to ${emailClean} (${newRole.trim() || 'Employee'})`,
         type: 'general',
-        iconColor: 'text-green-400',
+        iconColor: colorObj.text,
         createdAt: serverTimestamp()
       });
 
       setNewEmail('');
       setNewName('');
       setNewRole('Employee');
+      setNewColor('emerald');
       setIsAddingEmail(false);
     } catch (err) {
       console.error("Error adding authorized email:", err);
@@ -834,34 +850,37 @@ export default function Team() {
               </div>
             ) : (
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                {authorizedEmails.map(item => (
-                  <div key={item.id} className="p-4 bg-white/5 border border-white/10 rounded-xl flex items-center justify-between group hover:border-white/20 transition-all">
-                    <div className="flex items-center gap-3">
-                      <div className="w-10 h-10 rounded-full bg-green-500/10 text-green-400 flex items-center justify-center font-bold border border-green-500/20">
-                        {item.name?.charAt(0) || 'U'}
+                {authorizedEmails.map(item => {
+                  const colorObj = COLOR_PRESETS.find(c => c.id === item.color) || COLOR_PRESETS[2];
+                  return (
+                    <div key={item.id} className="p-4 bg-white/5 border border-white/10 rounded-xl flex items-center justify-between group hover:border-white/20 transition-all">
+                      <div className="flex items-center gap-3">
+                        <div className={`w-10 h-10 rounded-full ${colorObj.bg} ${colorObj.text} flex items-center justify-center font-bold border ${colorObj.border} shadow-sm`}>
+                          {item.name?.charAt(0) || 'U'}
+                        </div>
+                        <div>
+                          <div className="font-bold text-white text-sm">{item.name}</div>
+                          <div className="text-xs text-gray-300 font-mono">{item.email}</div>
+                          <div className="text-[11px] text-gray-500 mt-0.5">Added by: {item.addedBy || 'Admin'}</div>
+                        </div>
                       </div>
-                      <div>
-                        <div className="font-bold text-white text-sm">{item.name}</div>
-                        <div className="text-xs text-gray-300 font-mono">{item.email}</div>
-                        <div className="text-[11px] text-gray-500 mt-0.5">Added by: {item.addedBy || 'Admin'}</div>
+                      <div className="flex items-center gap-3">
+                        <span className={`text-xs font-semibold px-2.5 py-1 rounded-lg border ${colorObj.bg} ${colorObj.text} ${colorObj.border}`}>
+                          {item.role || 'Employee'}
+                        </span>
+                        {hasAdminAccess(user?.email) && (
+                          <button
+                            onClick={() => handleRevokeAccess(item.id, item.email)}
+                            title="Revoke access"
+                            className="p-2 text-gray-400 hover:text-red-400 hover:bg-red-500/10 rounded-lg transition-colors border border-transparent hover:border-red-500/20"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        )}
                       </div>
                     </div>
-                    <div className="flex items-center gap-3">
-                      <span className="text-xs font-semibold text-green-400 px-2 py-0.5 bg-green-500/10 border border-green-500/20 rounded-md">
-                        {item.role || 'Employee'}
-                      </span>
-                      {hasAdminAccess(user?.email) && (
-                        <button
-                          onClick={() => handleRevokeAccess(item.id, item.email)}
-                          title="Revoke access"
-                          className="p-2 text-gray-400 hover:text-red-400 hover:bg-red-500/10 rounded-lg transition-colors border border-transparent hover:border-red-500/20"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </button>
-                      )}
-                    </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             )}
           </div>
@@ -871,11 +890,11 @@ export default function Team() {
       {/* Add Allowed Gmail Modal */}
       {isAddingEmail && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4 animate-in fade-in" onClick={() => setIsAddingEmail(false)}>
-          <div className="glass-card w-full max-w-md p-6 rounded-2xl border border-white/10 shadow-2xl animate-in zoom-in-95" onClick={e => e.stopPropagation()}>
+          <div className="glass-card w-full max-w-lg p-6 rounded-2xl border border-white/10 shadow-2xl animate-in zoom-in-95 max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
             <div className="flex justify-between items-center mb-5 pb-3 border-b border-white/10">
               <div className="flex items-center gap-2">
                 <UserPlus className="w-5 h-5 text-nyghto-orange" />
-                <h3 className="font-bold text-white text-lg">Add Allowed Gmail</h3>
+                <h3 className="font-bold text-white text-lg">Add Allowed Gmail & Role</h3>
               </div>
               <button onClick={() => setIsAddingEmail(false)} className="p-2 text-gray-400 hover:text-white rounded-lg hover:bg-white/5 transition-colors">
                 <X className="w-5 h-5" />
@@ -911,23 +930,110 @@ export default function Team() {
                 />
               </div>
 
+              {/* Custom Role Input & Quick Presets */}
               <div>
-                <label className="block text-xs font-semibold text-gray-400 uppercase tracking-wider mb-1.5">
-                  Assigned Role
-                </label>
-                <select
+                <div className="flex justify-between items-center mb-1.5">
+                  <label className="block text-xs font-semibold text-gray-400 uppercase tracking-wider">
+                    Assigned Role (Custom or Preset) *
+                  </label>
+                </div>
+
+                {/* Quick Role Preset Pills */}
+                <div className="flex flex-wrap gap-1.5 mb-2.5">
+                  {[
+                    'Employee',
+                    'Developer',
+                    'UI/UX Designer',
+                    'Product Manager',
+                    'Marketing',
+                    'Video Editor',
+                    'Sales',
+                    'Intern'
+                  ].map(r => (
+                    <button
+                      key={r}
+                      type="button"
+                      onClick={() => setNewRole(r)}
+                      className={`px-2.5 py-1 text-xs rounded-lg border transition-all ${
+                        newRole.toLowerCase() === r.toLowerCase()
+                          ? 'bg-nyghto-orange text-white border-nyghto-orange font-bold shadow-[0_0_8px_rgba(255,107,0,0.3)]'
+                          : 'bg-white/5 text-gray-300 border-white/10 hover:border-white/20'
+                      }`}
+                    >
+                      {r}
+                    </button>
+                  ))}
+                </div>
+
+                {/* Direct Custom Role text input */}
+                <input
+                  type="text"
+                  required
+                  placeholder="Type any custom role (e.g. Lead Flutter Developer, AI Engineer, HR...)"
                   value={newRole}
                   onChange={e => setNewRole(e.target.value)}
                   className="w-full bg-nyghto-dark border border-white/10 rounded-lg py-2 px-3 text-white focus:outline-none focus:border-nyghto-orange text-sm"
-                >
-                  <option value="Employee">Employee</option>
-                  <option value="Developer">Developer</option>
-                  <option value="UI/UX Designer">UI/UX Designer</option>
-                  <option value="Project Manager">Project Manager</option>
-                  <option value="Marketing">Marketing</option>
-                  <option value="Intern">Intern</option>
-                </select>
+                />
               </div>
+
+              {/* Custom Color Selector */}
+              <div>
+                <label className="block text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">
+                  Select Badge & Profile Color
+                </label>
+                <div className="grid grid-cols-4 sm:grid-cols-8 gap-2">
+                  {COLOR_PRESETS.map(c => {
+                    const isSelected = newColor === c.id;
+                    return (
+                      <button
+                        key={c.id}
+                        type="button"
+                        onClick={() => setNewColor(c.id)}
+                        className={`flex flex-col items-center justify-center p-2 rounded-xl border transition-all ${
+                          isSelected
+                            ? `${c.bg} ${c.border} ring-2 ring-white/40 scale-105`
+                            : 'bg-white/5 border-white/10 hover:border-white/20'
+                        }`}
+                      >
+                        <span className="w-5 h-5 rounded-full mb-1 shadow-sm" style={{ backgroundColor: c.dot }} />
+                        <span className={`text-[10px] font-semibold ${isSelected ? c.text : 'text-gray-400'}`}>
+                          {c.name}
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Live Preview Card */}
+              {newRole && (
+                <div className="p-3 bg-white/5 border border-white/10 rounded-xl flex items-center justify-between mt-2">
+                  <div className="flex items-center gap-3">
+                    {(() => {
+                      const colorObj = COLOR_PRESETS.find(c => c.id === newColor) || COLOR_PRESETS[2];
+                      return (
+                        <>
+                          <div className={`w-8 h-8 rounded-full ${colorObj.bg} ${colorObj.text} flex items-center justify-center text-xs font-bold border ${colorObj.border}`}>
+                            {newName ? newName.charAt(0).toUpperCase() : (newEmail ? newEmail.charAt(0).toUpperCase() : 'U')}
+                          </div>
+                          <div>
+                            <div className="text-xs font-bold text-white">{newName || newEmail || 'New Member'}</div>
+                            <div className="text-[10px] text-gray-400">{newEmail || 'user@gmail.com'}</div>
+                          </div>
+                        </>
+                      );
+                    })()}
+                  </div>
+                  {(() => {
+                    const colorObj = COLOR_PRESETS.find(c => c.id === newColor) || COLOR_PRESETS[2];
+                    return (
+                      <span className={`text-xs font-semibold px-2.5 py-1 rounded-lg border ${colorObj.bg} ${colorObj.text} ${colorObj.border}`}>
+                        {newRole}
+                      </span>
+                    );
+                  })()}
+                </div>
+              )}
 
               <div className="pt-3 border-t border-white/10 flex justify-end gap-3">
                 <button
