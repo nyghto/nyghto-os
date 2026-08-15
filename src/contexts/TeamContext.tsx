@@ -26,9 +26,9 @@ const COLOR_MAP: Record<string, string> = {
 };
 
 const BASE_FOUNDERS: TeamMember[] = [
-  { id: 'u1', name: 'SALU RINSHAN', role: 'CEO', initial: 'S', color: 'bg-nyghto-orange', phone: '+91 9539202847', email: 'salurinshan9539@gmail.com', avatarImage: '/rinshan.jpg' },
-  { id: 'u2', name: 'AMAL DAS', role: 'CTO', initial: 'A', color: 'bg-blue-500', phone: '+91 7012028379', email: 'amaldas.co@gmail.com', avatarImage: '/amal.jpg' },
-  { id: 'u3', name: 'SHAHAL MUHAMMED', role: 'CPO', initial: 'S', color: 'bg-green-500', phone: '+91 8075911860', email: 'shahalmuhammed404@gmail.com', avatarImage: '/shahal.jpg' },
+  { id: 'u1', name: 'RINSHAN', role: 'CEO', initial: 'R', color: 'bg-nyghto-orange', phone: '+91 9539202847', email: 'salurinshan9539@gmail.com', avatarImage: '/rinshan.jpg' },
+  { id: 'u2', name: 'AMAL', role: 'CTO', initial: 'A', color: 'bg-blue-500', phone: '+91 7012028379', email: 'amaldas.co@gmail.com', avatarImage: '/amal.jpg' },
+  { id: 'u3', name: 'SHAHAL', role: 'CPO', initial: 'S', color: 'bg-green-500', phone: '+91 8075911860', email: 'shahalmuhammed404@gmail.com', avatarImage: '/shahal.jpg' },
 ];
 
 interface TeamContextType {

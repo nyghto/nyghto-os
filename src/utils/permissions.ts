@@ -34,10 +34,10 @@ export const getUserRole = (email: string | null | undefined, fallbackRole: stri
 
 export const getUserName = (email: string | null | undefined, fallbackName: string = 'User'): string => {
   if (!email) return fallbackName;
-  const lower = email.toLowerCase();
-  if (lower === 'salurinshan9539@gmail.com') return 'Salu Rinshan';
-  if (lower === 'shahalmuhammed404@gmail.com') return 'Shahal Muhammed';
-  if (lower === 'amaldas.co@gmail.com') return 'Amal Das';
+  const lower = email.toLowerCase().trim();
+  if (lower === 'salurinshan9539@gmail.com') return 'RINSHAN';
+  if (lower === 'shahalmuhammed404@gmail.com') return 'SHAHAL';
+  if (lower === 'amaldas.co@gmail.com') return 'AMAL';
   if (lower === 'team.nyghto@gmail.com') return 'Nyghto Admin';
   return fallbackName;
 };

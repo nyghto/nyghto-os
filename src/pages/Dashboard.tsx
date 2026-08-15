@@ -47,6 +47,15 @@ const getActivityIcon = (type: string) => {
   }
 };
 
+const formatActivityText = (text: string) => {
+  if (!text) return '';
+  return text
+    .replace(/shahalmuhammed\s*404/gi, 'SHAHAL')
+    .replace(/shahal\s+muhammed/gi, 'SHAHAL')
+    .replace(/salu\s+rinshan/gi, 'RINSHAN')
+    .replace(/amal\s+das/gi, 'AMAL');
+};
+
 const formatTaskDate = (dateString: string) => {
   if (!dateString || dateString === 'Today') return dateString;
   try {
@@ -298,7 +307,7 @@ export default function Dashboard() {
                   <div key={activity.id} className="flex gap-4">
                     <div className="mt-1"><Icon className={`w-5 h-5 ${activity.iconColor}`} /></div>
                     <div>
-                      <p className="text-sm font-medium text-theme-text">{activity.text.replace(/shahalmuhammed\s*404/gi, 'Nighto')}</p>
+                      <p className="text-sm font-medium text-theme-text">{formatActivityText(activity.text)}</p>
                       <p className="text-xs text-theme-muted mt-1">
                         {activity.createdAt ? new Date(activity.createdAt.seconds * 1000).toLocaleString() : 'Just now'}
                       </p>
@@ -554,7 +563,7 @@ export default function Dashboard() {
                         <Icon className={`w-5 h-5 ${activity.iconColor}`} />
                       </div>
                       <div className="flex-1">
-                        <p className="text-sm font-medium text-theme-text">{activity.text.replace(/shahalmuhammed\s*404/gi, 'Nighto')}</p>
+                        <p className="text-sm font-medium text-theme-text">{formatActivityText(activity.text)}</p>
                         <p className="text-xs text-theme-muted mt-2 font-medium">
                           {activity.createdAt ? new Date(activity.createdAt.seconds * 1000).toLocaleString() : 'Just now'}
                         </p>

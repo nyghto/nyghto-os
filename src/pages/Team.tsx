@@ -1008,9 +1008,9 @@ export default function Team() {
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               {[
                 { email: 'team.nyghto@gmail.com', name: 'Nyghto Admin', role: 'Super Admin', avatar: null },
-                { email: 'salurinshan9539@gmail.com', name: 'Salu Rinshan', role: 'CEO', avatar: '/rinshan.jpg' },
-                { email: 'amaldas.co@gmail.com', name: 'Amal Das', role: 'CTO', avatar: '/amal.jpg' },
-                { email: 'shahalmuhammed404@gmail.com', name: 'Shahal Muhammed', role: 'CPO', avatar: '/shahal.jpg' }
+                { email: 'salurinshan9539@gmail.com', name: 'RINSHAN', role: 'CEO', avatar: '/rinshan.jpg' },
+                { email: 'amaldas.co@gmail.com', name: 'AMAL', role: 'CTO', avatar: '/amal.jpg' },
+                { email: 'shahalmuhammed404@gmail.com', name: 'SHAHAL', role: 'CPO', avatar: '/shahal.jpg' }
               ].map(founder => (
                 <div key={founder.email} className="p-4 bg-white/5 border border-white/10 rounded-xl flex items-center justify-between">
                   <div className="flex items-center gap-3">
