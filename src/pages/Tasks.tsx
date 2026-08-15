@@ -142,7 +142,7 @@ export default function Tasks() {
   const handleDrop = async (e: React.DragEvent, column: string) => {
     e.preventDefault();
     setDraggedOverColumn(null);
-    if (!draggedTaskId || !hasAdminAccess(user?.email)) return;
+    if (!draggedTaskId || !user) return;
 
     const task = tasks.find(t => t.id === draggedTaskId);
     if (task && task.status !== column) {
@@ -212,7 +212,7 @@ export default function Tasks() {
                 return (
                 <div 
                   key={task.id} 
-                  draggable={hasAdminAccess(user?.email)}
+                  draggable={!!user}
                   onDragStart={(e) => handleDragStart(e, task.id)}
                   onDragEnd={() => setDraggedTaskId(null)}
                   className={`glass-card p-4 cursor-grab active:cursor-grabbing hover:border-nyghto-orange/30 transition-all group relative ${

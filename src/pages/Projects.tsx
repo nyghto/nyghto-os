@@ -170,7 +170,7 @@ export default function Projects() {
     <div 
       key={project.id} 
       className="glass-card hover-scale p-6 flex flex-col hover:border-white/20 transition-all group"
-      draggable={viewMode === 'kanban' && hasAdminAccess(user?.email)}
+      draggable={viewMode === 'kanban' && !!user}
       onDragStart={(e) => handleDragStart(e, project.id)}
     >
       <div className="flex justify-between items-start mb-4">
@@ -392,7 +392,7 @@ export default function Projects() {
   const handleDrop = async (e: React.DragEvent, column: string) => {
     e.preventDefault();
     setDraggedOverColumn(null);
-    if (!draggedProjectId || !hasAdminAccess(user?.email)) return;
+    if (!draggedProjectId || !user) return;
 
     const project = projects.find(p => p.id === draggedProjectId);
     if (project && project.status !== column) {
