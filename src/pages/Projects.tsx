@@ -40,12 +40,38 @@ const getPriorityColor = (priority: string) => {
 
 export default function Projects() {
   const { userData, user } = useAuth();
+  const isMainAdmin = isSuperAdmin(user?.email);
   const { teamMembers } = useTeam();
   const [filter, setFilter] = useState('All');
   const [projects, setProjects] = useState<Project[]>([]);
   const [isAddingProject, setIsAddingProject] = useState(false);
   const [activeDropdown, setActiveDropdown] = useState<string | null>(null);
   const [viewMode, setViewMode] = useState<'list' | 'kanban'>('kanban');
+  
+  // Current logged in team member
+  const currentMember = teamMembers.find(
+    m => m.email?.toLowerCase().trim() === user?.email?.toLowerCase().trim()
+  );
+  const currentMemberName = currentMember?.name;
+
+  // Strict Project Permission: Only assigned team members and Super Admin can edit or drag
+  const canManageProject = (project: Project) => {
+    if (!user) return false;
+    if (isMainAdmin) return true; // Super Admin (team.nyghto@gmail.com) can manage all projects
+    const isInTeam = project.team?.some(t => {
+      const cleanT = t.toLowerCase().trim();
+      if (currentMemberName && cleanT === currentMemberName.toLowerCase().trim()) return true;
+      if (currentMember?.id && cleanT === currentMember.id.toLowerCase().trim()) return true;
+      if (user?.email && cleanT === user.email.toLowerCase().trim()) return true;
+      return false;
+    });
+    if (isInTeam) return true;
+    if (project.createdBy && (
+      project.createdBy.toLowerCase().trim() === (userData?.name || '').toLowerCase().trim() ||
+      project.createdBy.toLowerCase().trim() === (currentMemberName || '').toLowerCase().trim()
+    )) return true;
+    return false;
+  };
   
   // Drag and drop state
   const [draggedProjectId, setDraggedProjectId] = useState<string | null>(null);
@@ -166,11 +192,17 @@ export default function Projects() {
     }
   };
 
-  const renderProjectCard = (project: Project) => (
+  const renderProjectCard = (project: Project) => {
+    const isPermitted = canManageProject(project);
+    return (
     <div 
       key={project.id} 
-      className="glass-card hover-scale p-6 flex flex-col hover:border-white/20 transition-all group"
-      draggable={viewMode === 'kanban' && !!user}
+      className={`glass-card p-6 flex flex-col transition-all group ${
+        isPermitted 
+          ? 'hover-scale hover:border-white/20 cursor-grab active:cursor-grabbing' 
+          : 'cursor-default border-white/5 opacity-90'
+      }`}
+      draggable={viewMode === 'kanban' && isPermitted}
       onDragStart={(e) => handleDragStart(e, project.id)}
     >
       <div className="flex justify-between items-start mb-4">
@@ -178,59 +210,61 @@ export default function Projects() {
           {getStatusIcon(project.status)}
           {project.status}
         </div>
-        <div className="relative">
-          <button 
-            onClick={(e) => {
-              e.stopPropagation();
-              setActiveDropdown(activeDropdown === project.id ? null : project.id);
-            }}
-            className="text-gray-500 hover:text-white transition-colors"
-          >
-            <MoreVertical className="w-5 h-5" />
-          </button>
-          {activeDropdown === project.id && (
-            <div className="absolute top-6 right-0 bg-nyghto-dark border border-white/10 shadow-xl rounded-lg w-36 py-1 z-10">
-              <button
-                onClick={() => {
-                  setEditingProject(project);
-                  setEditProgress(project.progress || 0);
-                  setEditStatus(project.status);
-                  setEditDueDate(project.dueDate || '');
-                  setActiveDropdown(null);
-                }}
-                className="w-full text-left px-4 py-2 text-sm text-white hover:bg-white/5 transition-colors"
-              >
-                Update Project
-              </button>
-              <button
-                onClick={async () => {
-                  const newStatus = project.status === 'On Hold' ? 'In Progress' : 'On Hold';
-                  try {
-                    await updateDoc(doc(db, 'projects', project.id), { status: newStatus });
-                    await addDoc(collection(db, 'activities'), {
-                      text: `${userData?.name || 'User'} marked project '${project.name}' as ${newStatus}`,
-                      type: 'project',
-                      iconColor: 'text-nyghto-yellow',
-                      createdAt: serverTimestamp()
-                    });
-                  } catch(e) {}
-                  setActiveDropdown(null);
-                }}
-                className="w-full text-left px-4 py-2 text-sm text-white hover:bg-white/5 transition-colors"
-              >
-                {project.status === 'On Hold' ? 'Resume Project' : 'Put On Hold'}
-              </button>
-              {isSuperAdmin(user?.email) && (
+        {isPermitted && (
+          <div className="relative">
+            <button 
+              onClick={(e) => {
+                e.stopPropagation();
+                setActiveDropdown(activeDropdown === project.id ? null : project.id);
+              }}
+              className="text-gray-500 hover:text-white transition-colors"
+            >
+              <MoreVertical className="w-5 h-5" />
+            </button>
+            {activeDropdown === project.id && (
+              <div className="absolute top-6 right-0 bg-nyghto-dark border border-white/10 shadow-xl rounded-lg w-36 py-1 z-10">
                 <button
-                  onClick={() => deleteProject(project.id, project.name)}
-                  className="w-full text-left px-4 py-2 text-sm text-red-500 hover:bg-white/5 transition-colors"
+                  onClick={() => {
+                    setEditingProject(project);
+                    setEditProgress(project.progress || 0);
+                    setEditStatus(project.status);
+                    setEditDueDate(project.dueDate || '');
+                    setActiveDropdown(null);
+                  }}
+                  className="w-full text-left px-4 py-2 text-sm text-white hover:bg-white/5 transition-colors"
                 >
-                  Delete Project
+                  Update Project
                 </button>
-              )}
-            </div>
-          )}
-        </div>
+                <button
+                  onClick={async () => {
+                    const newStatus = project.status === 'On Hold' ? 'In Progress' : 'On Hold';
+                    try {
+                      await updateDoc(doc(db, 'projects', project.id), { status: newStatus });
+                      await addDoc(collection(db, 'activities'), {
+                        text: `${userData?.name || 'User'} marked project '${project.name}' as ${newStatus}`,
+                        type: 'project',
+                        iconColor: 'text-nyghto-yellow',
+                        createdAt: serverTimestamp()
+                      });
+                    } catch(e) {}
+                    setActiveDropdown(null);
+                  }}
+                  className="w-full text-left px-4 py-2 text-sm text-white hover:bg-white/5 transition-colors"
+                >
+                  {project.status === 'On Hold' ? 'Resume Project' : 'Put On Hold'}
+                </button>
+                {isMainAdmin && (
+                  <button
+                    onClick={() => deleteProject(project.id, project.name)}
+                    className="w-full text-left px-4 py-2 text-sm text-red-500 hover:bg-white/5 transition-colors"
+                  >
+                    Delete Project
+                  </button>
+                )}
+              </div>
+            )}
+          </div>
+        )}
       </div>
       
       <h3 className="text-xl font-bold mb-1 hover:text-nyghto-orange transition-colors cursor-pointer">
@@ -282,12 +316,13 @@ export default function Projects() {
         
         <div className="flex justify-between items-center pt-4 border-t border-white/10">
           <div 
-            className="flex flex-wrap gap-2 relative cursor-pointer group/team"
+            className={`flex flex-wrap gap-2 relative ${isMainAdmin ? 'cursor-pointer group/team' : 'cursor-default'}`}
             onClick={(e) => {
+              if (!isMainAdmin) return;
               e.stopPropagation();
               setActiveDropdown(`team-${project.id}`);
             }}
-            title="Click to manage team"
+            title={isMainAdmin ? "Click to manage team" : "Assigned team members"}
           >
             {(project.team || []).map((member, i) => {
               const memberData = teamMembers.find(m => m.name === member);
@@ -295,13 +330,13 @@ export default function Projects() {
               return (
                 <div 
                   key={i} 
-                  className="flex items-center gap-1.5 pr-2.5 rounded-full border border-white/10 bg-white/5 group-hover/team:border-nyghto-orange/50 transition-colors z-0"
+                  className={`flex items-center gap-1.5 pr-2.5 rounded-full border border-white/10 bg-white/5 transition-colors z-0 ${isMainAdmin ? 'group-hover/team:border-nyghto-orange/50' : ''}`}
                 >
                   {memberData.avatarImage ? (
                     <img 
                       src={memberData.avatarImage} 
                       alt={memberData.name} 
-                      className="w-6 h-6 rounded-full object-cover shadow-sm group-hover/assign:ring-2 group-hover/assign:ring-nyghto-orange transition-all"
+                      className="w-6 h-6 rounded-full object-cover shadow-sm"
                     />
                   ) : (
                     <div className={`w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-bold text-white ${memberData.color || 'bg-gray-800'}`}>
@@ -315,7 +350,7 @@ export default function Projects() {
               );
             })}
 
-            {activeDropdown === `team-${project.id}` && (
+            {isMainAdmin && activeDropdown === `team-${project.id}` && (
               <div 
                 className="absolute bottom-10 left-0 bg-nyghto-dark border border-white/10 shadow-xl rounded-lg w-48 py-2 z-20"
                 onClick={(e) => e.stopPropagation()}
@@ -372,8 +407,14 @@ export default function Projects() {
       </div>
     </div>
   );
+  };
 
   const handleDragStart = (e: React.DragEvent, projectId: string) => {
+    const project = projects.find(p => p.id === projectId);
+    if (!project || !canManageProject(project)) {
+      e.preventDefault();
+      return;
+    }
     setDraggedProjectId(projectId);
   };
 
@@ -395,7 +436,12 @@ export default function Projects() {
     if (!draggedProjectId || !user) return;
 
     const project = projects.find(p => p.id === draggedProjectId);
-    if (project && project.status !== column) {
+    if (!project || !canManageProject(project)) {
+      setDraggedProjectId(null);
+      return;
+    }
+
+    if (project.status !== column) {
       try {
         await updateDoc(doc(db, 'projects', draggedProjectId), { 
           status: column,
