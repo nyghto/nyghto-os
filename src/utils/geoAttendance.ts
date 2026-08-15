@@ -170,16 +170,21 @@ export async function verifyAndMarkAutoAttendance(
       };
     }
   } catch (error: any) {
-    if (error.code === 1) {
+    if (error?.code === 1) {
       return {
         status: 'permission_denied',
-        message: 'Location permission was denied. Please allow GPS to enable auto-attendance.'
+        message: 'Location permission was denied. Please enable GPS in browser to use auto-attendance.'
       };
     }
-    console.error("Error in auto attendance:", error);
+    if (error?.code === 2 || error?.code === 3) {
+      return {
+        status: 'error',
+        message: 'GPS location unavailable or timed out. Please click "Verify My Location".'
+      };
+    }
     return {
       status: 'error',
-      message: 'Failed to verify location for attendance.'
+      message: 'Location verification not available.'
     };
   }
 }

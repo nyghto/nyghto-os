@@ -1,11 +1,11 @@
 import React, { useRef, useEffect, useState } from 'react';
-import { Tldraw, Editor, DefaultColorStyle, DefaultHorizontalAlignStyle, createShapeId } from 'tldraw';
+import { Tldraw, Editor, DefaultColorStyle, DefaultHorizontalAlignStyle, createShapeId, getSnapshot, loadSnapshot } from 'tldraw';
 import 'tldraw/tldraw.css';
 import { useTheme } from '../contexts/ThemeContext';
 import { useAuth } from '../contexts/AuthContext';
 import { db } from '../lib/firebase';
 import { doc, onSnapshot, setDoc } from 'firebase/firestore';
-import { Cloud, CloudCheck, Loader2 } from 'lucide-react';
+import { Loader2 } from 'lucide-react';
 
 export default function Whiteboard() {
   const { theme } = useTheme();
@@ -20,14 +20,17 @@ export default function Whiteboard() {
   const lastSavedJsonRef = useRef<string>('');
 
   const handleMount = (ed: Editor) => {
-    setEditor(ed);
-    // Force camera to origin on load
-    ed.setCamera({ x: 0, y: 0, z: 1 });
-    // Set default styling to white and left-aligned
-    ed.setStyleForNextShapes(DefaultColorStyle, 'white');
-    ed.setStyleForNextShapes(DefaultHorizontalAlignStyle, 'start');
-    // Set default tool to text so clicking anywhere starts typing
-    ed.setCurrentTool('text');
+    // Defer state update to next frame to prevent React render loop warning
+    requestAnimationFrame(() => {
+      setEditor(ed);
+      // Force camera to origin on load
+      ed.setCamera({ x: 0, y: 0, z: 1 });
+      // Set default styling to white and left-aligned
+      ed.setStyleForNextShapes(DefaultColorStyle, 'white');
+      ed.setStyleForNextShapes(DefaultHorizontalAlignStyle, 'start');
+      // Set default tool to text so clicking anywhere starts typing
+      ed.setCurrentTool('text');
+    });
 
     // Attach native tldraw event listener for double click & right click
     ed.on('event', (info: any) => {
@@ -84,7 +87,7 @@ export default function Whiteboard() {
         try {
           const parsed = JSON.parse(data.snapshotJson);
           isApplyingRemoteRef.current = true;
-          editor.store.loadSnapshot(parsed);
+          loadSnapshot(editor.store, parsed);
           lastSavedJsonRef.current = data.snapshotJson;
           setSyncStatus('synced');
         } catch (err) {
@@ -113,7 +116,7 @@ export default function Whiteboard() {
 
         saveTimeoutRef.current = setTimeout(async () => {
           try {
-            const snap = editor.store.getSnapshot();
+            const snap = getSnapshot(editor.store);
             const jsonStr = JSON.stringify(snap);
             if (jsonStr === lastSavedJsonRef.current) {
               setSyncStatus('synced');
