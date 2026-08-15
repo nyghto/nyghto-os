@@ -1,10 +1,11 @@
 import React, { useState, useEffect } from 'react';
-import { Search, Plus, Filter, FileText, CheckCircle2, Clock, AlertCircle, Users, X, MoreVertical, Eye, Trash2, Pencil, ShieldCheck, UserPlus, Mail, Lock, Bell, Check } from 'lucide-react';
+import { Search, Plus, Filter, FileText, CheckCircle2, Clock, AlertCircle, Users, X, MoreVertical, Eye, Trash2, Pencil, ShieldCheck, UserPlus, Mail, Lock, Bell, Check, MapPin, Navigation, Compass, Radio } from 'lucide-react';
 import { collection, onSnapshot, addDoc, query, orderBy, serverTimestamp, doc, updateDoc, deleteDoc, setDoc } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import { useAuth } from '../contexts/AuthContext';
 import { useTeam } from '../contexts/TeamContext';
 import { hasAdminAccess, isSuperAdmin, isCoreFounder, CORE_EMAILS, getUserRole, getUserName, getUserAvatar } from '../utils/permissions';
+import { getOfficeLocation, saveOfficeLocation, verifyAndMarkAutoAttendance, type OfficeLocation, type AutoAttendanceResult } from '../utils/geoAttendance';
 import type { Report } from '../types';
 
 const COLOR_PRESETS = [
@@ -45,6 +46,17 @@ export default function Team() {
   const [selectedProfile, setSelectedProfile] = useState<any>(null);
   const [teamStatus, setTeamStatus] = useState<Record<string, string>>({});
   const [offDayContextMenu, setOffDayContextMenu] = useState<{ x: number; y: number; day: number } | null>(null);
+
+  // GPS Geofence (100m) Auto-Attendance State
+  const [officeLocation, setOfficeLocation] = useState<OfficeLocation | null>(null);
+  const [isEditingOffice, setIsEditingOffice] = useState(false);
+  const [officeLat, setOfficeLat] = useState('');
+  const [officeLng, setOfficeLng] = useState('');
+  const [officeRadius, setOfficeRadius] = useState('100');
+  const [officeName, setOfficeName] = useState('Nyghto HQ');
+  const [isCapturingLocation, setIsCapturingLocation] = useState(false);
+  const [isVerifyingGeo, setIsVerifyingGeo] = useState(false);
+  const [geoResult, setGeoResult] = useState<AutoAttendanceResult | null>(null);
   
   // Authorized Emails (Whitelist) State
   const [authorizedEmails, setAuthorizedEmails] = useState<any[]>([]);
@@ -68,6 +80,101 @@ export default function Team() {
   const [hours, setHours] = useState('8');
   const [tasksDone, setTasksDone] = useState('1');
   const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
+
+  // Load Office Location from Firestore
+  useEffect(() => {
+    getOfficeLocation().then((loc) => {
+      setOfficeLocation(loc);
+      setOfficeLat(loc.latitude.toString());
+      setOfficeLng(loc.longitude.toString());
+      setOfficeRadius(loc.radius.toString());
+      setOfficeName(loc.name);
+    });
+  }, []);
+
+  // Auto-verify GPS on component mount for logged-in user
+  useEffect(() => {
+    if (user?.email && teamMembers.length > 0) {
+      verifyAndMarkAutoAttendance(user.email, currentName, teamMembers).then((res) => {
+        if (res.status === 'marked_present') {
+          setGeoResult(res);
+        }
+      }).catch(() => {});
+    }
+  }, [user?.email, teamMembers.length]);
+
+  const handleCaptureOfficeLocation = () => {
+    if (!navigator.geolocation) {
+      alert("Geolocation is not supported by your browser");
+      return;
+    }
+    setIsCapturingLocation(true);
+    navigator.geolocation.getCurrentPosition(
+      async (pos) => {
+        const lat = pos.coords.latitude;
+        const lng = pos.coords.longitude;
+        setOfficeLat(lat.toString());
+        setOfficeLng(lng.toString());
+        await saveOfficeLocation({
+          latitude: lat,
+          longitude: lng,
+          radius: Number(officeRadius) || 100,
+          name: officeName || 'Nyghto HQ'
+        }, currentName);
+        const updated = await getOfficeLocation();
+        setOfficeLocation(updated);
+        setIsCapturingLocation(false);
+        setIsEditingOffice(false);
+        setGeoResult({
+          status: 'marked_present',
+          message: `📍 Office Location successfully set to ${lat.toFixed(5)}, ${lng.toFixed(5)} (100m Geofence Active)`
+        });
+      },
+      (err) => {
+        setIsCapturingLocation(false);
+        alert("Failed to capture current GPS location: " + err.message);
+      },
+      { enableHighAccuracy: true, timeout: 10000 }
+    );
+  };
+
+  const handleSaveManualOfficeLocation = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!officeLat || !officeLng) return;
+    try {
+      await saveOfficeLocation({
+        latitude: parseFloat(officeLat),
+        longitude: parseFloat(officeLng),
+        radius: Number(officeRadius) || 100,
+        name: officeName || 'Nyghto HQ'
+      }, currentName);
+      const updated = await getOfficeLocation();
+      setOfficeLocation(updated);
+      setIsEditingOffice(false);
+      setGeoResult({
+        status: 'marked_present',
+        message: '📍 Office GPS coordinates saved successfully!'
+      });
+    } catch (err) {
+      console.error("Error saving office coords:", err);
+    }
+  };
+
+  const handleVerifyCurrentLocation = async () => {
+    if (!user?.email) return;
+    setIsVerifyingGeo(true);
+    try {
+      const res = await verifyAndMarkAutoAttendance(user.email, currentName, teamMembers);
+      setGeoResult(res);
+    } catch (err: any) {
+      setGeoResult({
+        status: 'error',
+        message: err?.message || 'Verification failed'
+      });
+    } finally {
+      setIsVerifyingGeo(false);
+    }
+  };
 
   useEffect(() => {
     const handleClick = () => setOffDayContextMenu(null);
@@ -783,7 +890,82 @@ export default function Team() {
       )}
 
       {tab === 'Attendance' && (
-        <div className="glass-card p-6 flex flex-col max-h-[800px]">
+        <div className="glass-card p-6 flex flex-col max-h-[850px]">
+          {/* GPS Geofence (100m) Live Status Bar */}
+          <div className="mb-6 p-4 rounded-xl bg-gradient-to-r from-white/5 to-white/[0.02] border border-white/10 flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4 shadow-lg">
+            <div className="flex items-center gap-3">
+              <div className="p-2.5 rounded-xl bg-nyghto-orange/10 border border-nyghto-orange/20 text-nyghto-orange">
+                <MapPin className="w-5 h-5" />
+              </div>
+              <div>
+                <div className="flex items-center gap-2">
+                  <span className="font-bold text-white text-sm">{officeLocation?.name || 'Nyghto Office HQ'}</span>
+                  <span className="text-[10px] bg-green-500/20 text-green-400 font-bold px-2 py-0.5 rounded-full border border-green-500/30 flex items-center gap-1">
+                    <span className="w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse" />
+                    {officeLocation?.radius || 100}m Geofence Active
+                  </span>
+                </div>
+                <p className="text-xs text-gray-400 mt-0.5">
+                  GPS: {officeLocation?.latitude ? officeLocation.latitude.toFixed(4) : '11.2588'}, {officeLocation?.longitude ? officeLocation.longitude.toFixed(4) : '75.7804'} • Auto-marks Present when login occurs within 100m
+                </p>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2 w-full lg:w-auto">
+              <button
+                type="button"
+                onClick={handleVerifyCurrentLocation}
+                disabled={isVerifyingGeo}
+                className="flex-1 lg:flex-initial px-3.5 py-2 rounded-lg bg-green-500/20 hover:bg-green-500/30 text-green-300 border border-green-500/30 text-xs font-bold transition-all flex items-center justify-center gap-1.5 disabled:opacity-50"
+                title="Check your GPS distance from office and mark Present if within 100m"
+              >
+                <Navigation className={`w-3.5 h-3.5 ${isVerifyingGeo ? 'animate-spin' : ''}`} />
+                <span>{isVerifyingGeo ? 'Checking GPS...' : '📍 Check My Location (100m Auto Present)'}</span>
+              </button>
+
+              {isMainAdmin && (
+                <button
+                  type="button"
+                  onClick={() => setIsEditingOffice(true)}
+                  className="px-3.5 py-2 rounded-lg bg-white/5 hover:bg-white/10 text-gray-300 hover:text-white border border-white/10 text-xs font-semibold transition-all flex items-center gap-1.5"
+                  title="Configure Office GPS Location"
+                >
+                  <Pencil className="w-3.5 h-3.5 text-nyghto-orange" />
+                  <span>Set Office GPS</span>
+                </button>
+              )}
+            </div>
+          </div>
+
+          {/* GPS Verification Toast / Notification Banner */}
+          {geoResult && (
+            <div className={`mb-4 p-3 rounded-xl border flex items-center justify-between gap-3 animate-in fade-in ${
+              geoResult.status === 'marked_present'
+                ? 'bg-green-500/10 border-green-500/30 text-green-300'
+                : geoResult.status === 'outside_radius'
+                  ? 'bg-amber-500/10 border-amber-500/30 text-amber-300'
+                  : geoResult.status === 'already_marked'
+                    ? 'bg-blue-500/10 border-blue-500/30 text-blue-300'
+                    : 'bg-red-500/10 border-red-500/30 text-red-300'
+            }`}>
+              <div className="flex items-center gap-2 text-xs font-medium">
+                {geoResult.status === 'marked_present' && <CheckCircle2 className="w-4 h-4 text-green-400" />}
+                {geoResult.status === 'outside_radius' && <Compass className="w-4 h-4 text-amber-400" />}
+                {geoResult.status === 'already_marked' && <CheckCircle2 className="w-4 h-4 text-blue-400" />}
+                {geoResult.status === 'error' && <AlertCircle className="w-4 h-4 text-red-400" />}
+                {geoResult.status === 'permission_denied' && <AlertCircle className="w-4 h-4 text-red-400" />}
+                <span>{geoResult.message}</span>
+              </div>
+              <button 
+                onClick={() => setGeoResult(null)}
+                className="text-gray-400 hover:text-white p-1"
+                title="Dismiss"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          )}
+
           <div className="flex justify-between items-center mb-6">
             <div>
               <h3 className="text-xl font-bold text-white mb-1">Attendance ({monthName} {attendanceYear})</h3>
@@ -891,7 +1073,7 @@ export default function Team() {
                             <button 
                               disabled={!isMainAdmin || isOffDay}
                               onClick={() => isMainAdmin && !isOffDay && cycleAttendance(member.id, day)}
-                              className={`w-10 h-8 rounded border transition-all ${classes} ${
+                              className={`w-10 h-8 rounded border transition-all relative ${classes} ${
                                 !isMainAdmin 
                                   ? 'cursor-default' 
                                   : isOffDay 
@@ -899,14 +1081,19 @@ export default function Team() {
                                     : 'cursor-pointer'
                               }`}
                               title={
-                                !isMainAdmin 
-                                  ? `Status: ${status} (Only main admin can edit attendance)`
-                                  : isOffDay 
-                                    ? 'Off Day (Permanent - Cannot be changed)' 
-                                    : `Click to change status (Currently: ${status})`
+                                record?.autoMarked
+                                  ? `📍 Auto-verified via GPS (${record.distanceMeters || 100}m) at ${record.checkInTime || 'Login'}`
+                                  : !isMainAdmin 
+                                    ? `Status: ${status} (Only main admin can edit attendance)`
+                                    : isOffDay 
+                                      ? 'Off Day (Permanent - Cannot be changed)' 
+                                      : `Click to change status (Currently: ${status})`
                               }
                             >
-                              {display}
+                              <span>{display}</span>
+                              {record?.autoMarked && (
+                                <span className="absolute -top-1 -right-1 text-[8px]" title="GPS Geofence Verified">📍</span>
+                              )}
                             </button>
                           </td>
                         );
@@ -1973,6 +2160,118 @@ export default function Team() {
                 >
                   <Check className="w-4 h-4" />
                   Approve & Grant Access
+                </button>
+              </div>
+      {/* Office GPS Geofence Settings Modal (Super Admin only) */}
+      {isEditingOffice && (
+        <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="glass-card w-full max-w-md p-6 relative border border-white/20 shadow-2xl">
+            <button 
+              onClick={() => setIsEditingOffice(false)}
+              className="p-1 text-gray-400 hover:text-white rounded-full hover:bg-white/10 absolute right-4 top-4"
+            >
+              <X className="w-5 h-5" />
+            </button>
+
+            <div className="flex items-center gap-3 mb-5">
+              <div className="w-10 h-10 rounded-xl bg-nyghto-orange/20 border border-nyghto-orange/30 flex items-center justify-center text-nyghto-orange">
+                <MapPin className="w-5 h-5" />
+              </div>
+              <div>
+                <h3 className="text-lg font-bold text-white">Office GPS & 100m Geofence</h3>
+                <p className="text-xs text-gray-400">Configure headquarters coordinates for auto-attendance</p>
+              </div>
+            </div>
+
+            {/* 1-Click GPS Capture Button */}
+            <div className="mb-5 p-4 rounded-xl bg-nyghto-orange/10 border border-nyghto-orange/30 text-center">
+              <p className="text-xs text-gray-300 mb-3 font-medium">
+                Are you currently at the office? Capture your exact location in one click:
+              </p>
+              <button
+                type="button"
+                onClick={handleCaptureOfficeLocation}
+                disabled={isCapturingLocation}
+                className="w-full py-2.5 px-4 rounded-lg bg-nyghto-orange hover:bg-orange-600 text-white text-xs font-bold transition-all shadow-lg flex items-center justify-center gap-2 disabled:opacity-50"
+              >
+                <Navigation className={`w-4 h-4 ${isCapturingLocation ? 'animate-spin' : ''}`} />
+                <span>{isCapturingLocation ? 'Capturing GPS Location...' : '📍 Set My Current GPS as Office Location'}</span>
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveManualOfficeLocation} className="space-y-4">
+              <div>
+                <label className="block text-xs font-semibold text-gray-400 mb-1">Office Name</label>
+                <input
+                  type="text"
+                  value={officeName}
+                  onChange={(e) => setOfficeName(e.target.value)}
+                  placeholder="e.g. Nyghto HQ, Calicut"
+                  className="w-full bg-nyghto-dark border border-white/10 rounded-lg p-2.5 text-sm text-white focus:outline-none focus:border-nyghto-orange"
+                  required
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-semibold text-gray-400 mb-1">Latitude</label>
+                  <input
+                    type="number"
+                    step="any"
+                    value={officeLat}
+                    onChange={(e) => setOfficeLat(e.target.value)}
+                    placeholder="11.2588"
+                    className="w-full bg-nyghto-dark border border-white/10 rounded-lg p-2.5 text-sm text-white focus:outline-none focus:border-nyghto-orange"
+                    required
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-gray-400 mb-1">Longitude</label>
+                  <input
+                    type="number"
+                    step="any"
+                    value={officeLng}
+                    onChange={(e) => setOfficeLng(e.target.value)}
+                    placeholder="75.7804"
+                    className="w-full bg-nyghto-dark border border-white/10 rounded-lg p-2.5 text-sm text-white focus:outline-none focus:border-nyghto-orange"
+                    required
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-gray-400 mb-1">
+                  Geofence Radius (Meters)
+                </label>
+                <div className="flex items-center gap-2">
+                  <input
+                    type="number"
+                    value={officeRadius}
+                    onChange={(e) => setOfficeRadius(e.target.value)}
+                    min="10"
+                    max="1000"
+                    placeholder="100"
+                    className="w-full bg-nyghto-dark border border-white/10 rounded-lg p-2.5 text-sm text-white focus:outline-none focus:border-nyghto-orange"
+                    required
+                  />
+                  <span className="text-xs text-gray-400 font-bold whitespace-nowrap">Meters (100m)</span>
+                </div>
+              </div>
+
+              <div className="flex gap-3 pt-3 border-t border-white/10">
+                <button
+                  type="button"
+                  onClick={() => setIsEditingOffice(false)}
+                  className="flex-1 py-2.5 bg-white/5 hover:bg-white/10 text-gray-300 rounded-lg text-xs font-semibold transition-colors border border-white/10"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="flex-1 py-2.5 bg-emerald-500 hover:bg-emerald-600 text-white rounded-lg text-xs font-bold transition-colors shadow-lg flex items-center justify-center gap-1.5"
+                >
+                  <Check className="w-4 h-4" />
+                  Save Coordinates
                 </button>
               </div>
             </form>
