@@ -433,14 +433,20 @@ export default function Team() {
     }
   };
 
+  // Periodic timer to refresh active/inactive status every 10 seconds
+  const [, setPresenceTick] = useState(0);
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setPresenceTick(t => t + 1);
+    }, 10000);
+    return () => clearInterval(interval);
+  }, []);
+
   const isMemberActive = (memberId: string) => {
     const data = teamStatus[memberId];
     if (!data) return false;
-    if (data.status === 'Active') {
-      if (data.lastActive) {
-        return (Date.now() - data.lastActive) < 90000;
-      }
-      return true;
+    if (data.status === 'Active' && typeof data.lastActive === 'number') {
+      return (Date.now() - data.lastActive) < 45000;
     }
     return false;
   };

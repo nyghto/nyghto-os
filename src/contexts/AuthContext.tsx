@@ -188,7 +188,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
           email: currentEmail
         }, { merge: true }).catch(() => {});
       }
-    }, 20000);
+    }, 15000);
 
     const handleBeforeUnload = () => {
       if (auth.currentUser?.email) {
