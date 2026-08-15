@@ -4,12 +4,13 @@ import { collection, onSnapshot, addDoc, query, orderBy, serverTimestamp, doc, u
 import { db } from '../lib/firebase';
 import { useAuth } from '../contexts/AuthContext';
 import { useTeam } from '../contexts/TeamContext';
-import { hasAdminAccess, getUserRole, getUserName, getUserAvatar } from '../utils/permissions';
+import { hasAdminAccess, isSuperAdmin, getUserRole, getUserName, getUserAvatar } from '../utils/permissions';
 import type { Report } from '../types';
 
 export default function Team() {
   const { userData, user } = useAuth();
   const { teamMembers, updateMemberAvatar } = useTeam();
+  const isMainAdmin = isSuperAdmin(user?.email);
   const currentRole = getUserRole(user?.email, userData?.role);
   const currentName = getUserName(user?.email, userData?.name);
   const currentAvatar = getUserAvatar(user?.email);
@@ -141,6 +142,9 @@ export default function Team() {
   };
 
   const cycleAttendance = async (userId: string, day: number) => {
+    // Only Main Admin (team.nyghto@gmail.com) can mark/cycle attendance
+    if (!isMainAdmin) return;
+
     // Format date as YYYY-MM-DD
     const dateStr = `${attendanceYear}-${String(attendanceMonth + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
     const docId = `${dateStr}_${userId}`;
@@ -169,7 +173,7 @@ export default function Team() {
           date: dateStr,
           status: nextStatus,
           updatedAt: serverTimestamp(),
-          updatedBy: userData?.name || 'User'
+          updatedBy: currentName || 'Admin'
         });
       }
     } catch (error) {
@@ -178,6 +182,8 @@ export default function Team() {
   };
 
   const markAllAsPermanentOffDay = async (day: number) => {
+    if (!isMainAdmin) return;
+
     const dateStr = `${attendanceYear}-${String(attendanceMonth + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
     try {
       const promises = teamMembers.map(member => {
@@ -187,7 +193,7 @@ export default function Team() {
           date: dateStr,
           status: 'Off Day',
           updatedAt: serverTimestamp(),
-          updatedBy: userData?.name || 'User'
+          updatedBy: currentName || 'Admin'
         });
       });
       await Promise.all(promises);
@@ -532,22 +538,35 @@ export default function Team() {
               <h3 className="text-xl font-bold text-white mb-1">Attendance ({monthName} {attendanceYear})</h3>
               <p className="text-sm text-gray-400">Click a cell to cycle: Present → Half Day → Absent → Clear (Right click Date for Off Day)</p>
             </div>
-            <div className="flex items-center gap-2">
-              <button 
-                onClick={() => {
-                  if (attendanceMonth === 0) { setAttendanceMonth(11); setAttendanceYear(y => y - 1); }
-                  else setAttendanceMonth(m => m - 1);
-                }}
-                className="p-2 bg-white/5 hover:bg-white/10 rounded-lg transition-colors"
-              >&lt;</button>
-              <div className="font-bold w-32 text-center text-white">{monthName} {attendanceYear}</div>
-              <button 
-                onClick={() => {
-                  if (attendanceMonth === 11) { setAttendanceMonth(0); setAttendanceYear(y => y + 1); }
-                  else setAttendanceMonth(m => m + 1);
-                }}
-                className="p-2 bg-white/5 hover:bg-white/10 rounded-lg transition-colors"
-              >&gt;</button>
+            <div className="flex items-center gap-3">
+              {!isMainAdmin ? (
+                <div className="flex items-center gap-1.5 px-3 py-1.5 bg-amber-500/10 border border-amber-500/20 text-amber-300 rounded-lg text-xs font-semibold">
+                  <span>🔒</span>
+                  <span>View-Only Mode (Main Admin only)</span>
+                </div>
+              ) : (
+                <div className="flex items-center gap-1.5 px-3 py-1.5 bg-green-500/10 border border-green-500/20 text-green-400 rounded-lg text-xs font-semibold">
+                  <span>⚡</span>
+                  <span>Main Admin Access</span>
+                </div>
+              )}
+              <div className="flex items-center gap-2">
+                <button 
+                  onClick={() => {
+                    if (attendanceMonth === 0) { setAttendanceMonth(11); setAttendanceYear(y => y - 1); }
+                    else setAttendanceMonth(m => m - 1);
+                  }}
+                  className="p-2 bg-white/5 hover:bg-white/10 rounded-lg transition-colors"
+                >&lt;</button>
+                <div className="font-bold w-32 text-center text-white">{monthName} {attendanceYear}</div>
+                <button 
+                  onClick={() => {
+                    if (attendanceMonth === 11) { setAttendanceMonth(0); setAttendanceYear(y => y + 1); }
+                    else setAttendanceMonth(m => m + 1);
+                  }}
+                  className="p-2 bg-white/5 hover:bg-white/10 rounded-lg transition-colors"
+                >&gt;</button>
+              </div>
             </div>
           </div>
           
@@ -581,13 +600,16 @@ export default function Team() {
                   return (
                     <tr key={day} className={`hover:bg-white/5 transition-colors ${isToday ? 'bg-nyghto-orange/5' : ''}`}>
                       <td 
-                        className={`px-4 py-2 border-r border-white/10 font-medium sticky left-0 bg-nyghto-dark/95 backdrop-blur-sm cursor-context-menu ${isToday ? 'text-nyghto-orange' : 'text-gray-400'}`}
+                        className={`px-4 py-2 border-r border-white/10 font-medium sticky left-0 bg-nyghto-dark/95 backdrop-blur-sm ${
+                          isMainAdmin ? 'cursor-context-menu' : 'cursor-default'
+                        } ${isToday ? 'text-nyghto-orange' : 'text-gray-400'}`}
                         onContextMenu={(e) => {
+                          if (!isMainAdmin) return;
                           e.preventDefault();
                           e.stopPropagation();
                           setOffDayContextMenu({ x: e.clientX, y: e.clientY, day });
                         }}
-                        title="Right click to open Off Day menu"
+                        title={isMainAdmin ? "Right click to open Off Day menu" : undefined}
                       >
                         {day} {monthName.substring(0, 3)}
                       </td>
@@ -616,10 +638,22 @@ export default function Team() {
                         return (
                           <td key={member.id} className="px-4 py-2 border-white/10">
                             <button 
-                              disabled={isOffDay}
-                              onClick={() => !isOffDay && cycleAttendance(member.id, day)}
-                              className={`w-10 h-8 rounded border transition-all ${classes} ${isOffDay ? 'cursor-not-allowed opacity-80' : ''}`}
-                              title={isOffDay ? 'Off Day (Permanent - Cannot be changed)' : `Click to change status (Currently: ${status})`}
+                              disabled={!isMainAdmin || isOffDay}
+                              onClick={() => isMainAdmin && !isOffDay && cycleAttendance(member.id, day)}
+                              className={`w-10 h-8 rounded border transition-all ${classes} ${
+                                !isMainAdmin 
+                                  ? 'cursor-default' 
+                                  : isOffDay 
+                                    ? 'cursor-not-allowed opacity-80' 
+                                    : 'cursor-pointer'
+                              }`}
+                              title={
+                                !isMainAdmin 
+                                  ? `Status: ${status} (Only main admin can edit attendance)`
+                                  : isOffDay 
+                                    ? 'Off Day (Permanent - Cannot be changed)' 
+                                    : `Click to change status (Currently: ${status})`
+                              }
                             >
                               {display}
                             </button>
