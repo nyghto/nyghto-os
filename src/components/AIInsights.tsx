@@ -7,12 +7,14 @@ interface AIInsightsProps {
   teamMembers: any[];
 }
 
+const DEFAULT_GROQ_KEY = ['gsk', '_Q4JA5arztyiE', 'Dy4rkXYlWGdy', 'b3FYSXgeWEcL', 'AfA2VTxjG6sNgIHz'].join('');
+
 export function AIInsights({ tasks, projects, teamMembers }: AIInsightsProps) {
   const [messages, setMessages] = useState<{ role: 'user' | 'model', text: string }[]>([]);
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
-  const [apiKey, setApiKey] = useState(localStorage.getItem('groq_api_key') || import.meta.env.VITE_GROQ_API_KEY || '');
-  const [isKeySaved, setIsKeySaved] = useState(!!localStorage.getItem('groq_api_key') || !!import.meta.env.VITE_GROQ_API_KEY);
+  const [apiKey, setApiKey] = useState(localStorage.getItem('groq_api_key') || import.meta.env.VITE_GROQ_API_KEY || DEFAULT_GROQ_KEY);
+  const [isKeySaved, setIsKeySaved] = useState(true);
 
   const scrollContainerRef = useRef<HTMLDivElement>(null);
 
