@@ -1,18 +1,25 @@
-export const ADMIN_EMAILS = [
+export const CORE_EMAILS = [
   'team.nyghto@gmail.com',
-  'shahalmuhammed404@gmail.com',
   'salurinshan9539@gmail.com',
-  'amaldas.co@gmail.com'
+  'amaldas.co@gmail.com',
+  'shahalmuhammed404@gmail.com'
 ];
+
+export const ADMIN_EMAILS = CORE_EMAILS;
+
+export const isCoreFounder = (email: string | null | undefined): boolean => {
+  if (!email) return false;
+  return CORE_EMAILS.includes(email.toLowerCase().trim());
+};
 
 export const hasAdminAccess = (email: string | null | undefined): boolean => {
   if (!email) return false;
-  return ADMIN_EMAILS.includes(email.toLowerCase());
+  return CORE_EMAILS.includes(email.toLowerCase().trim());
 };
 
 export const isSuperAdmin = (email: string | null | undefined): boolean => {
   if (!email) return false;
-  return email.toLowerCase() === 'team.nyghto@gmail.com';
+  return email.toLowerCase().trim() === 'team.nyghto@gmail.com';
 };
 
 export const getUserRole = (email: string | null | undefined, fallbackRole: string = 'Employee'): string => {

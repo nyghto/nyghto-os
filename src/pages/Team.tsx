@@ -1,10 +1,10 @@
 import React, { useState, useEffect } from 'react';
-import { Search, Plus, Filter, FileText, CheckCircle2, Clock, AlertCircle, Users, X, MoreVertical, Eye, Trash2, Pencil } from 'lucide-react';
+import { Search, Plus, Filter, FileText, CheckCircle2, Clock, AlertCircle, Users, X, MoreVertical, Eye, Trash2, Pencil, ShieldCheck, UserPlus, Mail, Lock } from 'lucide-react';
 import { collection, onSnapshot, addDoc, query, orderBy, serverTimestamp, doc, updateDoc, deleteDoc, setDoc } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import { useAuth } from '../contexts/AuthContext';
 import { useTeam } from '../contexts/TeamContext';
-import { hasAdminAccess, isSuperAdmin, getUserRole, getUserName, getUserAvatar } from '../utils/permissions';
+import { hasAdminAccess, isSuperAdmin, isCoreFounder, CORE_EMAILS, getUserRole, getUserName, getUserAvatar } from '../utils/permissions';
 import type { Report } from '../types';
 
 export default function Team() {
@@ -35,6 +35,13 @@ export default function Team() {
   const [teamStatus, setTeamStatus] = useState<Record<string, string>>({});
   const [offDayContextMenu, setOffDayContextMenu] = useState<{ x: number; y: number; day: number } | null>(null);
   
+  // Authorized Emails (Whitelist) State
+  const [authorizedEmails, setAuthorizedEmails] = useState<any[]>([]);
+  const [isAddingEmail, setIsAddingEmail] = useState(false);
+  const [newEmail, setNewEmail] = useState('');
+  const [newName, setNewName] = useState('');
+  const [newRole, setNewRole] = useState('Employee');
+
   // Form State
   const [reportTitle, setReportTitle] = useState('');
   const [reportDescription, setReportDescription] = useState('');
@@ -70,12 +77,78 @@ export default function Team() {
       setTeamStatus(statuses);
     });
 
+    const unsubscribeAuthEmails = onSnapshot(collection(db, 'authorized_emails'), (snapshot) => {
+      const emailsList = snapshot.docs.map(d => ({
+        id: d.id,
+        ...d.data()
+      }));
+      setAuthorizedEmails(emailsList);
+    });
+
     return () => {
       unsubscribeReports();
       unsubscribeAttendance();
       unsubscribeTeamStatus();
+      unsubscribeAuthEmails();
     };
   }, []);
+
+  const handleAddAuthorizedEmail = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const emailClean = newEmail.toLowerCase().trim();
+    if (!emailClean) return;
+
+    if (CORE_EMAILS.includes(emailClean)) {
+      alert("This email is already one of the default core founder accounts!");
+      return;
+    }
+
+    if (authorizedEmails.some(a => a.email?.toLowerCase() === emailClean)) {
+      alert("This email is already on the authorized whitelist!");
+      return;
+    }
+
+    try {
+      await addDoc(collection(db, 'authorized_emails'), {
+        email: emailClean,
+        name: newName.trim() || emailClean.split('@')[0],
+        role: newRole.trim() || 'Employee',
+        addedBy: currentName,
+        addedByEmail: user?.email || '',
+        createdAt: serverTimestamp()
+      });
+
+      await addDoc(collection(db, 'activities'), {
+        text: `${currentName} granted workspace access to ${emailClean} (${newRole})`,
+        type: 'general',
+        iconColor: 'text-green-400',
+        createdAt: serverTimestamp()
+      });
+
+      setNewEmail('');
+      setNewName('');
+      setNewRole('Employee');
+      setIsAddingEmail(false);
+    } catch (err) {
+      console.error("Error adding authorized email:", err);
+    }
+  };
+
+  const handleRevokeAccess = async (docId: string, email: string) => {
+    if (window.confirm(`Are you sure you want to revoke access for "${email}"? They will be immediately blocked from accessing Nyghto OS.`)) {
+      try {
+        await deleteDoc(doc(db, 'authorized_emails', docId));
+        await addDoc(collection(db, 'activities'), {
+          text: `${currentName} revoked access for ${email}`,
+          type: 'general',
+          iconColor: 'text-red-400',
+          createdAt: serverTimestamp()
+        });
+      } catch (err) {
+        console.error("Error revoking access:", err);
+      }
+    }
+  };
 
   const handleSubmitReport = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -300,11 +373,12 @@ export default function Team() {
       </div>
 
       {/* Big Tab Boxes */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-4">
         {[
           { id: 'Daily Reports', icon: FileText, desc: 'View & submit daily logs' },
           { id: 'Team Members', icon: Users, desc: 'Manage your team profiles' },
-          { id: 'Attendance', icon: CheckCircle2, desc: 'Track daily presence' }
+          { id: 'Attendance', icon: CheckCircle2, desc: 'Track daily presence' },
+          { id: 'Access Whitelist', icon: ShieldCheck, desc: 'Manage allowed Gmails' }
         ].map(t => (
           <button
             key={t.id}
@@ -672,6 +746,197 @@ export default function Team() {
             <div className="flex items-center gap-1.5"><div className="w-4 h-4 rounded bg-yellow-500/20 border border-yellow-500/30 flex items-center justify-center text-[10px] text-nyghto-yellow font-bold">HD</div> = Half Day</div>
             <div className="flex items-center gap-1.5"><div className="w-4 h-4 rounded bg-red-500/20 border border-red-500/30 flex items-center justify-center text-[10px] text-red-400 font-bold">A</div> = Absent</div>
             <div className="flex items-center gap-1.5"><div className="w-4 h-4 rounded bg-gray-500/20 border border-gray-500/30 flex items-center justify-center text-[10px] text-gray-400 font-bold">O</div> = Off Day (Permanent)</div>
+          </div>
+        </div>
+      )}
+
+      {tab === 'Access Whitelist' && (
+        <div className="space-y-6 animate-in fade-in">
+          <div className="glass-card p-6 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+            <div>
+              <div className="flex items-center gap-2">
+                <ShieldCheck className="w-6 h-6 text-nyghto-orange" />
+                <h3 className="text-xl font-bold text-white">Workspace Access & Whitelist</h3>
+              </div>
+              <p className="text-sm text-gray-400 mt-1 max-w-xl">
+                Only whitelisted Google accounts can access Nyghto OS. If anyone else attempts to log in, their access is blocked automatically.
+              </p>
+            </div>
+            {hasAdminAccess(user?.email) && (
+              <button
+                onClick={() => setIsAddingEmail(true)}
+                className="btn-primary flex items-center gap-2 text-sm whitespace-nowrap"
+              >
+                <UserPlus className="w-4 h-4" />
+                Add Allowed Gmail
+              </button>
+            )}
+          </div>
+
+          {/* Section 1: Core Founder Accounts (Protected) */}
+          <div className="glass-card p-6">
+            <h4 className="text-xs font-bold uppercase tracking-wider text-gray-400 mb-4 flex items-center gap-2">
+              <Lock className="w-4 h-4 text-nyghto-yellow" />
+              Core Founder Accounts (Permanent Access)
+            </h4>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {[
+                { email: 'team.nyghto@gmail.com', name: 'Nyghto Admin', role: 'Super Admin', avatar: null },
+                { email: 'salurinshan9539@gmail.com', name: 'Salih Rinshan', role: 'CEO', avatar: '/rinshan.jpg' },
+                { email: 'amaldas.co@gmail.com', name: 'Amal Das', role: 'CTO', avatar: '/amal.jpg' },
+                { email: 'shahalmuhammed404@gmail.com', name: 'Shahal Muhammed', role: 'CPO', avatar: '/shahal.jpg' }
+              ].map(founder => (
+                <div key={founder.email} className="p-4 bg-white/5 border border-white/10 rounded-xl flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    {founder.avatar ? (
+                      <img src={founder.avatar} alt={founder.name} className="w-10 h-10 rounded-full object-cover border border-nyghto-orange/40" />
+                    ) : (
+                      <div className="w-10 h-10 rounded-full bg-theme-bg flex items-center justify-center text-nyghto-orange font-bold border border-theme-border">
+                        {founder.name.charAt(0)}
+                      </div>
+                    )}
+                    <div>
+                      <div className="font-bold text-white text-sm">{founder.name}</div>
+                      <div className="text-xs text-gray-400 font-mono">{founder.email}</div>
+                    </div>
+                  </div>
+                  <div className="flex flex-col items-end gap-1">
+                    <span className="text-xs font-bold text-nyghto-orange uppercase px-2 py-0.5 bg-nyghto-orange/10 border border-nyghto-orange/20 rounded-md">
+                      {founder.role}
+                    </span>
+                    <span className="text-[10px] text-gray-500 font-medium">Permanent</span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* Section 2: Manually Added Whitelist Accounts */}
+          <div className="glass-card p-6">
+            <h4 className="text-xs font-bold uppercase tracking-wider text-gray-400 mb-4 flex items-center gap-2">
+              <Mail className="w-4 h-4 text-green-400" />
+              Invited & Allowed Gmail Accounts ({authorizedEmails.length})
+            </h4>
+
+            {authorizedEmails.length === 0 ? (
+              <div className="p-8 text-center bg-white/5 rounded-xl border border-white/10">
+                <p className="text-gray-400 text-sm">No additional Gmail accounts added yet.</p>
+                <p className="text-xs text-gray-500 mt-1">Click "Add Allowed Gmail" above to whitelist any new team member or employee.</p>
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {authorizedEmails.map(item => (
+                  <div key={item.id} className="p-4 bg-white/5 border border-white/10 rounded-xl flex items-center justify-between group hover:border-white/20 transition-all">
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 rounded-full bg-green-500/10 text-green-400 flex items-center justify-center font-bold border border-green-500/20">
+                        {item.name?.charAt(0) || 'U'}
+                      </div>
+                      <div>
+                        <div className="font-bold text-white text-sm">{item.name}</div>
+                        <div className="text-xs text-gray-300 font-mono">{item.email}</div>
+                        <div className="text-[11px] text-gray-500 mt-0.5">Added by: {item.addedBy || 'Admin'}</div>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-3">
+                      <span className="text-xs font-semibold text-green-400 px-2 py-0.5 bg-green-500/10 border border-green-500/20 rounded-md">
+                        {item.role || 'Employee'}
+                      </span>
+                      {hasAdminAccess(user?.email) && (
+                        <button
+                          onClick={() => handleRevokeAccess(item.id, item.email)}
+                          title="Revoke access"
+                          className="p-2 text-gray-400 hover:text-red-400 hover:bg-red-500/10 rounded-lg transition-colors border border-transparent hover:border-red-500/20"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Add Allowed Gmail Modal */}
+      {isAddingEmail && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4 animate-in fade-in" onClick={() => setIsAddingEmail(false)}>
+          <div className="glass-card w-full max-w-md p-6 rounded-2xl border border-white/10 shadow-2xl animate-in zoom-in-95" onClick={e => e.stopPropagation()}>
+            <div className="flex justify-between items-center mb-5 pb-3 border-b border-white/10">
+              <div className="flex items-center gap-2">
+                <UserPlus className="w-5 h-5 text-nyghto-orange" />
+                <h3 className="font-bold text-white text-lg">Add Allowed Gmail</h3>
+              </div>
+              <button onClick={() => setIsAddingEmail(false)} className="p-2 text-gray-400 hover:text-white rounded-lg hover:bg-white/5 transition-colors">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <form onSubmit={handleAddAuthorizedEmail} className="space-y-4">
+              <div>
+                <label className="block text-xs font-semibold text-gray-400 uppercase tracking-wider mb-1.5">
+                  Gmail Address *
+                </label>
+                <input
+                  type="email"
+                  required
+                  placeholder="example@gmail.com"
+                  value={newEmail}
+                  onChange={e => setNewEmail(e.target.value)}
+                  className="w-full bg-nyghto-dark border border-white/10 rounded-lg py-2 px-3 text-white focus:outline-none focus:border-nyghto-orange text-sm"
+                />
+                <p className="text-[11px] text-gray-500 mt-1">This user will immediately be allowed to sign in with Google.</p>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-gray-400 uppercase tracking-wider mb-1.5">
+                  Full Name
+                </label>
+                <input
+                  type="text"
+                  placeholder="e.g. Rahul Sharma"
+                  value={newName}
+                  onChange={e => setNewName(e.target.value)}
+                  className="w-full bg-nyghto-dark border border-white/10 rounded-lg py-2 px-3 text-white focus:outline-none focus:border-nyghto-orange text-sm"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-gray-400 uppercase tracking-wider mb-1.5">
+                  Assigned Role
+                </label>
+                <select
+                  value={newRole}
+                  onChange={e => setNewRole(e.target.value)}
+                  className="w-full bg-nyghto-dark border border-white/10 rounded-lg py-2 px-3 text-white focus:outline-none focus:border-nyghto-orange text-sm"
+                >
+                  <option value="Employee">Employee</option>
+                  <option value="Developer">Developer</option>
+                  <option value="UI/UX Designer">UI/UX Designer</option>
+                  <option value="Project Manager">Project Manager</option>
+                  <option value="Marketing">Marketing</option>
+                  <option value="Intern">Intern</option>
+                </select>
+              </div>
+
+              <div className="pt-3 border-t border-white/10 flex justify-end gap-3">
+                <button
+                  type="button"
+                  onClick={() => setIsAddingEmail(false)}
+                  className="px-4 py-2 rounded-lg text-sm font-medium hover:bg-white/5 transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="btn-primary text-sm flex items-center gap-1.5"
+                >
+                  <ShieldCheck className="w-4 h-4" />
+                  Grant Access
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}

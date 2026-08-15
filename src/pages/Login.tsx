@@ -2,14 +2,17 @@ import React, { useState } from 'react';
 import { signInWithPopup, GoogleAuthProvider } from 'firebase/auth';
 import { auth } from '../lib/firebase';
 import { useNavigate } from 'react-router-dom';
+import { useAuth } from '../contexts/AuthContext';
 
 export default function Login() {
+  const { unauthorizedError, clearUnauthorizedError } = useAuth();
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
 
   const handleGoogleSignIn = async () => {
     setError('');
+    clearUnauthorizedError();
     setLoading(true);
 
     try {
@@ -23,6 +26,8 @@ export default function Login() {
     }
   };
 
+  const activeError = error || unauthorizedError;
+
   return (
     <div className="min-h-screen flex items-center justify-center bg-theme-bg px-4">
       <div className="glass-card p-8 w-full max-w-md">
@@ -34,9 +39,9 @@ export default function Login() {
           <p className="text-theme-muted text-sm mt-2">Sign in to your workspace</p>
         </div>
 
-        {error && (
-          <div className="mb-6 p-3 rounded-lg bg-red-500/10 border border-red-500/20 text-red-500 text-sm text-center font-medium">
-            {error}
+        {activeError && (
+          <div className="mb-6 p-3 rounded-lg bg-red-500/10 border border-red-500/20 text-red-400 text-xs text-center font-medium leading-relaxed animate-in fade-in">
+            {activeError}
           </div>
         )}
 
