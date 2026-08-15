@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Search, Plus, Filter, FileText, CheckCircle2, Clock, AlertCircle, Users, X, MoreVertical } from 'lucide-react';
+import { Search, Plus, Filter, FileText, CheckCircle2, Clock, AlertCircle, Users, X, MoreVertical, Eye } from 'lucide-react';
 import { collection, onSnapshot, addDoc, query, orderBy, serverTimestamp, doc, updateDoc, deleteDoc, setDoc } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import { useAuth } from '../contexts/AuthContext';
@@ -19,7 +19,10 @@ export default function Team() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [activeDropdown, setActiveDropdown] = useState<string | null>(null);
   
+  const [viewingReport, setViewingReport] = useState<Report | null>(null);
   const [editingReport, setEditingReport] = useState<Report | null>(null);
+  const [editTitle, setEditTitle] = useState('');
+  const [editDescription, setEditDescription] = useState('');
   const [editHours, setEditHours] = useState('');
   const [editTasksDone, setEditTasksDone] = useState('');
   
@@ -32,6 +35,8 @@ export default function Team() {
   const [offDayContextMenu, setOffDayContextMenu] = useState<{ x: number; y: number; day: number } | null>(null);
   
   // Form State
+  const [reportTitle, setReportTitle] = useState('');
+  const [reportDescription, setReportDescription] = useState('');
   const [hours, setHours] = useState('8');
   const [tasksDone, setTasksDone] = useState('1');
   const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
@@ -82,21 +87,26 @@ export default function Team() {
         employeeName: currentName,
         employeeAvatar: currentName.charAt(0) || 'U',
         role: currentRole,
+        title: reportTitle.trim() || 'Work Progress Report',
+        description: reportDescription.trim() || '',
         date,
         status: 'Submitted',
         hours: parseFloat(hours),
+        durationDays: parseFloat(hours) >= 8 ? parseFloat((parseFloat(hours) / 8).toFixed(1)) : 1,
         tasksDone: parseInt(tasksDone),
         createdAt: serverTimestamp()
       });
 
       await addDoc(collection(db, 'activities'), {
-        text: `${currentName} (${currentRole}) submitted a report for ${hours}h`,
+        text: `${currentName} (${currentRole}) submitted report: "${reportTitle.trim() || 'Work Report'}" (${hours}h)`,
         type: 'report',
         iconColor: 'text-nyghto-yellow',
         createdAt: serverTimestamp()
       });
 
       setIsSubmitting(false);
+      setReportTitle('');
+      setReportDescription('');
       setHours('8');
       setTasksDone('1');
     } catch (error) {
@@ -109,7 +119,10 @@ export default function Team() {
     if (!editingReport) return;
     try {
       await updateDoc(doc(db, 'reports', editingReport.id), {
+        title: editTitle.trim() || 'Work Progress Report',
+        description: editDescription.trim() || '',
         hours: parseFloat(editHours),
+        durationDays: parseFloat(editHours) >= 8 ? parseFloat((parseFloat(editHours) / 8).toFixed(1)) : 1,
         tasksDone: parseInt(editTasksDone)
       });
       setEditingReport(null);
@@ -369,10 +382,11 @@ export default function Team() {
                 <thead className="bg-white/5 text-gray-400">
                   <tr>
                     <th className="px-6 py-4 font-medium rounded-tl-xl">Employee</th>
+                    <th className="px-6 py-4 font-medium">Work Report / Topic</th>
                     <th className="px-6 py-4 font-medium">Date</th>
-                    <th className="px-6 py-4 font-medium">Status</th>
-                    <th className="px-6 py-4 font-medium">Hours Logged</th>
+                    <th className="px-6 py-4 font-medium">Duration</th>
                     <th className="px-6 py-4 font-medium">Tasks Done</th>
+                    <th className="px-6 py-4 font-medium">Status</th>
                     <th className="px-6 py-4 font-medium text-right rounded-tr-xl">Action</th>
                   </tr>
                 </thead>
@@ -398,8 +412,32 @@ export default function Team() {
                           </div>
                         </div>
                       </td>
-                      <td className="px-6 py-4 text-gray-300">{report.date}</td>
-                      <td className="px-6 py-4">
+                      <td className="px-6 py-4 max-w-xs">
+                        <button
+                          onClick={() => setViewingReport(report)}
+                          className="text-left group/title block"
+                        >
+                          <div className="font-medium text-white group-hover/title:text-nyghto-orange transition-colors flex items-center gap-1.5 line-clamp-1">
+                            <span>{report.title || 'Work Progress Report'}</span>
+                            <Eye className="w-3.5 h-3.5 text-gray-400 opacity-0 group-hover/title:opacity-100 transition-opacity shrink-0" />
+                          </div>
+                          {report.description ? (
+                            <div className="text-xs text-gray-400 line-clamp-1 mt-0.5">{report.description}</div>
+                          ) : (
+                            <div className="text-[11px] text-gray-500 italic">Click to view details</div>
+                          )}
+                        </button>
+                      </td>
+                      <td className="px-6 py-4 text-gray-300 whitespace-nowrap">{report.date}</td>
+                      <td className="px-6 py-4 font-medium whitespace-nowrap">
+                        {report.hours > 0 ? (
+                          <span>
+                            {report.hours}h {report.hours >= 8 ? <span className="text-xs text-nyghto-orange font-semibold">({(report.hours / 8).toFixed(1)}d)</span> : ''}
+                          </span>
+                        ) : '-'}
+                      </td>
+                      <td className="px-6 py-4 text-gray-300">{report.tasksDone > 0 ? report.tasksDone : '-'}</td>
+                      <td className="px-6 py-4 whitespace-nowrap">
                         <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium border ${
                           report.status === 'Submitted' 
                             ? 'bg-green-500/10 text-green-400 border-green-500/20' 
@@ -409,53 +447,66 @@ export default function Team() {
                           {report.status}
                         </span>
                       </td>
-                      <td className="px-6 py-4 font-medium">
-                        {report.hours > 0 ? (
-                          <span>
-                            {report.hours}h {report.hours >= 8 ? <span className="text-xs text-gray-400">({(report.hours / 8).toFixed(1)}d)</span> : ''}
-                          </span>
-                        ) : '-'}
-                      </td>
-                      <td className="px-6 py-4 text-gray-300">{report.tasksDone > 0 ? report.tasksDone : '-'}</td>
-                      <td className="px-6 py-4 text-right">
-                        <div className="relative inline-block text-left">
-                          <button 
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              setActiveDropdown(activeDropdown === report.id ? null : report.id);
-                            }}
-                            className="p-1 text-gray-500 hover:text-white transition-colors"
+                      <td className="px-6 py-4 text-right whitespace-nowrap">
+                        <div className="flex items-center justify-end gap-1">
+                          <button
+                            onClick={() => setViewingReport(report)}
+                            title="View Report Details"
+                            className="p-1.5 text-gray-400 hover:text-nyghto-orange hover:bg-white/5 rounded-lg transition-colors"
                           >
-                            <MoreVertical className="w-5 h-5" />
+                            <Eye className="w-4 h-4" />
                           </button>
-                          {activeDropdown === report.id && (
-                            <div className="absolute right-0 mt-2 bg-nyghto-dark border border-white/10 shadow-xl rounded-lg w-32 py-1 z-10">
-                              <button
-                                onClick={() => {
-                                  setEditingReport(report);
-                                  setEditHours(report.hours.toString());
-                                  setEditTasksDone(report.tasksDone.toString());
-                                  setActiveDropdown(null);
-                                }}
-                                className="w-full text-left px-4 py-2 text-sm text-white hover:bg-white/5 transition-colors"
-                              >
-                                Edit Report
-                              </button>
-                              <button
-                                onClick={() => deleteReport(report.id)}
-                                className="w-full text-left px-4 py-2 text-sm text-red-500 hover:bg-white/5 transition-colors"
-                              >
-                                Delete
-                              </button>
-                            </div>
-                          )}
+                          <div className="relative inline-block text-left">
+                            <button 
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setActiveDropdown(activeDropdown === report.id ? null : report.id);
+                              }}
+                              className="p-1.5 text-gray-500 hover:text-white rounded-lg hover:bg-white/5 transition-colors"
+                            >
+                              <MoreVertical className="w-4 h-4" />
+                            </button>
+                            {activeDropdown === report.id && (
+                              <div className="absolute right-0 mt-2 bg-nyghto-dark border border-white/10 shadow-xl rounded-lg w-36 py-1 z-10">
+                                <button
+                                  onClick={() => {
+                                    setViewingReport(report);
+                                    setActiveDropdown(null);
+                                  }}
+                                  className="w-full text-left px-4 py-2 text-sm text-white hover:bg-white/5 transition-colors flex items-center gap-2"
+                                >
+                                  <Eye className="w-3.5 h-3.5 text-nyghto-orange" />
+                                  View Details
+                                </button>
+                                <button
+                                  onClick={() => {
+                                    setEditingReport(report);
+                                    setEditTitle(report.title || '');
+                                    setEditDescription(report.description || '');
+                                    setEditHours(report.hours.toString());
+                                    setEditTasksDone(report.tasksDone.toString());
+                                    setActiveDropdown(null);
+                                  }}
+                                  className="w-full text-left px-4 py-2 text-sm text-white hover:bg-white/5 transition-colors"
+                                >
+                                  Edit Report
+                                </button>
+                                <button
+                                  onClick={() => deleteReport(report.id)}
+                                  className="w-full text-left px-4 py-2 text-sm text-red-500 hover:bg-white/5 transition-colors"
+                                >
+                                  Delete
+                                </button>
+                              </div>
+                            )}
+                          </div>
                         </div>
                       </td>
                     </tr>
                   ))}
                   {reports.length === 0 && (
                     <tr>
-                      <td colSpan={6} className="px-6 py-12 text-center text-gray-400">
+                      <td colSpan={7} className="px-6 py-12 text-center text-gray-400">
                         No reports submitted yet.
                       </td>
                     </tr>
@@ -650,7 +701,7 @@ export default function Team() {
 
       {isSubmitting && (
         <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="glass-card w-full max-w-md p-6 animate-in zoom-in-95">
+          <div className="glass-card w-full max-w-lg p-6 animate-in zoom-in-95 max-h-[90vh] overflow-y-auto">
             <div className="flex justify-between items-center mb-5">
               <h2 className="text-xl font-bold text-white">Submit Work Report</h2>
               <button 
@@ -678,13 +729,25 @@ export default function Team() {
             
             <form onSubmit={handleSubmitReport} className="space-y-4">
               <div>
+                <label className="block text-sm font-medium text-gray-400 mb-1">Work Title / Topic</label>
+                <input 
+                  type="text" 
+                  required
+                  placeholder="e.g. Dashboard UI Updates & Backend APIs"
+                  value={reportTitle}
+                  onChange={e => setReportTitle(e.target.value)}
+                  className="w-full bg-nyghto-dark border border-white/10 rounded-lg py-2 px-3 text-white focus:outline-none focus:border-nyghto-orange text-sm" 
+                />
+              </div>
+
+              <div>
                 <label className="block text-sm font-medium text-gray-400 mb-1">Date</label>
                 <input 
                   type="date" 
                   required
                   value={date}
                   onChange={e => setDate(e.target.value)}
-                  className="w-full bg-nyghto-dark border border-white/10 rounded-lg py-2 px-3 text-white focus:outline-none focus:border-nyghto-orange" 
+                  className="w-full bg-nyghto-dark border border-white/10 rounded-lg py-2 px-3 text-white focus:outline-none focus:border-nyghto-orange text-sm" 
                 />
               </div>
 
@@ -726,23 +789,34 @@ export default function Team() {
                   value={hours}
                   onChange={e => setHours(e.target.value)}
                   placeholder="Hours (e.g. 8 for 1 day, 80 for 10 days, 160 for 20 days)"
-                  className="w-full bg-nyghto-dark border border-white/10 rounded-lg py-2 px-3 text-white focus:outline-none focus:border-nyghto-orange" 
+                  className="w-full bg-nyghto-dark border border-white/10 rounded-lg py-2 px-3 text-white focus:outline-none focus:border-nyghto-orange text-sm" 
                 />
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-gray-400 mb-1">Tasks Completed</label>
+                <label className="block text-sm font-medium text-gray-400 mb-1">Tasks Completed (Count)</label>
                 <input 
                   type="number" 
                   min="0"
                   required
                   value={tasksDone}
                   onChange={e => setTasksDone(e.target.value)}
-                  className="w-full bg-nyghto-dark border border-white/10 rounded-lg py-2 px-3 text-white focus:outline-none focus:border-nyghto-orange" 
+                  className="w-full bg-nyghto-dark border border-white/10 rounded-lg py-2 px-3 text-white focus:outline-none focus:border-nyghto-orange text-sm" 
                 />
               </div>
 
-              <div className="pt-4 flex justify-end gap-3">
+              <div>
+                <label className="block text-sm font-medium text-gray-400 mb-1">Work Description & Details (What was done)</label>
+                <textarea 
+                  rows={3}
+                  placeholder="Describe key achievements, completed milestones, or notes..."
+                  value={reportDescription}
+                  onChange={e => setReportDescription(e.target.value)}
+                  className="w-full bg-nyghto-dark border border-white/10 rounded-lg py-2 px-3 text-white focus:outline-none focus:border-nyghto-orange text-sm resize-none" 
+                />
+              </div>
+
+              <div className="pt-3 flex justify-end gap-3 border-t border-white/10">
                 <button 
                   type="button"
                   onClick={() => setIsSubmitting(false)}
@@ -752,7 +826,7 @@ export default function Team() {
                 </button>
                 <button 
                   type="submit"
-                  className="btn-primary"
+                  className="btn-primary text-sm"
                 >
                   Submit Report
                 </button>
@@ -765,7 +839,7 @@ export default function Team() {
       {/* Edit Report Modal */}
       {editingReport && (
         <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="glass-card w-full max-w-md p-6 animate-in zoom-in-95">
+          <div className="glass-card w-full max-w-lg p-6 animate-in zoom-in-95 max-h-[90vh] overflow-y-auto">
             <div className="flex justify-between items-center mb-6">
               <h2 className="text-xl font-bold text-white">Edit Report</h2>
               <button 
@@ -777,6 +851,17 @@ export default function Team() {
             </div>
             
             <form onSubmit={handleUpdateReport} className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-400 mb-1">Work Title / Topic</label>
+                <input 
+                  type="text" 
+                  required
+                  value={editTitle}
+                  onChange={e => setEditTitle(e.target.value)}
+                  className="w-full bg-nyghto-dark border border-white/10 rounded-lg py-2 px-3 text-white focus:outline-none focus:border-nyghto-orange text-sm" 
+                />
+              </div>
+
               <div>
                 <div className="flex justify-between items-center mb-1">
                   <label className="text-sm font-medium text-gray-400">Duration / Working Days</label>
@@ -813,7 +898,7 @@ export default function Team() {
                   required
                   value={editHours}
                   onChange={e => setEditHours(e.target.value)}
-                  className="w-full bg-nyghto-dark border border-white/10 rounded-lg py-2 px-3 text-white focus:outline-none focus:border-nyghto-orange" 
+                  className="w-full bg-nyghto-dark border border-white/10 rounded-lg py-2 px-3 text-white focus:outline-none focus:border-nyghto-orange text-sm" 
                 />
               </div>
 
@@ -825,11 +910,21 @@ export default function Team() {
                   required
                   value={editTasksDone}
                   onChange={e => setEditTasksDone(e.target.value)}
-                  className="w-full bg-nyghto-dark border border-white/10 rounded-lg py-2 px-3 text-white focus:outline-none focus:border-nyghto-orange" 
+                  className="w-full bg-nyghto-dark border border-white/10 rounded-lg py-2 px-3 text-white focus:outline-none focus:border-nyghto-orange text-sm" 
                 />
               </div>
 
-              <div className="pt-4 flex justify-end gap-3">
+              <div>
+                <label className="block text-sm font-medium text-gray-400 mb-1">Work Description & Details</label>
+                <textarea 
+                  rows={3}
+                  value={editDescription}
+                  onChange={e => setEditDescription(e.target.value)}
+                  className="w-full bg-nyghto-dark border border-white/10 rounded-lg py-2 px-3 text-white focus:outline-none focus:border-nyghto-orange text-sm resize-none" 
+                />
+              </div>
+
+              <div className="pt-3 flex justify-end gap-3 border-t border-white/10">
                 <button 
                   type="button"
                   onClick={() => setEditingReport(null)}
@@ -839,12 +934,75 @@ export default function Team() {
                 </button>
                 <button 
                   type="submit"
-                  className="btn-primary"
+                  className="btn-primary text-sm"
                 >
                   Save Changes
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* View Report Details Modal */}
+      {viewingReport && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4 animate-in fade-in" onClick={() => setViewingReport(null)}>
+          <div className="glass-card w-full max-w-lg p-6 rounded-2xl border border-white/10 shadow-2xl animate-in zoom-in-95" onClick={e => e.stopPropagation()}>
+            <div className="flex justify-between items-center pb-4 border-b border-white/10">
+              <div className="flex items-center gap-3">
+                {getUserAvatar(viewingReport.employeeEmail) ? (
+                  <img src={getUserAvatar(viewingReport.employeeEmail)!} alt={viewingReport.employeeName} className="w-10 h-10 rounded-full object-cover border border-nyghto-orange/40 shadow-sm" />
+                ) : (
+                  <div className="w-10 h-10 rounded-full bg-theme-bg flex items-center justify-center text-nyghto-orange font-bold border border-theme-border">
+                    {viewingReport.employeeName?.charAt(0) || 'U'}
+                  </div>
+                )}
+                <div>
+                  <h3 className="font-bold text-white text-base">{viewingReport.employeeName}</h3>
+                  <div className="text-xs font-bold text-nyghto-orange uppercase tracking-wider">{getUserRole(viewingReport.employeeEmail, viewingReport.role)}</div>
+                </div>
+              </div>
+              <button onClick={() => setViewingReport(null)} className="p-2 text-gray-400 hover:text-white rounded-lg hover:bg-white/5 transition-colors">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="py-4 space-y-4">
+              <div>
+                <span className="text-[11px] text-gray-400 uppercase tracking-wider font-semibold">Report Title / Work Topic</span>
+                <h4 className="text-lg font-bold text-white mt-0.5">{viewingReport.title || 'Work Progress Report'}</h4>
+              </div>
+
+              <div className="grid grid-cols-3 gap-3 p-3 bg-white/5 border border-white/10 rounded-xl text-center">
+                <div>
+                  <div className="text-xs text-gray-400">Date</div>
+                  <div className="text-sm font-semibold text-white mt-0.5">{viewingReport.date}</div>
+                </div>
+                <div>
+                  <div className="text-xs text-gray-400">Duration</div>
+                  <div className="text-sm font-semibold text-nyghto-orange mt-0.5">
+                    {viewingReport.hours}h ({viewingReport.hours >= 8 ? `${(viewingReport.hours / 8).toFixed(1)}d` : `${viewingReport.hours}h`})
+                  </div>
+                </div>
+                <div>
+                  <div className="text-xs text-gray-400">Tasks Completed</div>
+                  <div className="text-sm font-semibold text-green-400 mt-0.5">{viewingReport.tasksDone}</div>
+                </div>
+              </div>
+
+              <div>
+                <span className="text-[11px] text-gray-400 uppercase tracking-wider font-semibold">Work Summary & Details</span>
+                <div className="mt-1.5 p-4 bg-nyghto-dark/80 border border-white/10 rounded-xl text-sm text-gray-200 whitespace-pre-wrap leading-relaxed min-h-[100px]">
+                  {viewingReport.description || 'No detailed description was provided for this report.'}
+                </div>
+              </div>
+            </div>
+
+            <div className="pt-3 border-t border-white/10 flex justify-end">
+              <button onClick={() => setViewingReport(null)} className="px-4 py-2 bg-white/10 hover:bg-white/20 text-white rounded-lg text-sm font-medium transition-colors">
+                Close
+              </button>
+            </div>
           </div>
         </div>
       )}

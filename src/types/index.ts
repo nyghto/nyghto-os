@@ -49,12 +49,16 @@ export interface Project {
 export interface Report {
   id: string;
   employeeId: string;
+  employeeEmail?: string;
   employeeName: string;
   employeeAvatar: string;
   role: string;
+  title?: string;
+  description?: string;
   date: string;
   status: 'Pending' | 'Submitted';
   hours: number;
+  durationDays?: number;
   tasksDone: number;
   createdAt: number;
 }
