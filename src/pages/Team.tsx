@@ -53,6 +53,10 @@ export default function Team() {
   const [newName, setNewName] = useState('');
   const [newRole, setNewRole] = useState('Employee');
   const [newColor, setNewColor] = useState('emerald');
+  const [editingAuthEmail, setEditingAuthEmail] = useState<any | null>(null);
+  const [editAuthName, setEditAuthName] = useState('');
+  const [editAuthRole, setEditAuthRole] = useState('');
+  const [editAuthColor, setEditAuthColor] = useState('emerald');
 
   // Form State
   const [reportTitle, setReportTitle] = useState('');
@@ -163,6 +167,25 @@ export default function Team() {
       } catch (err) {
         console.error("Error revoking access:", err);
       }
+    }
+  };
+
+  const handleUpdateAuthorizedEmail = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingAuthEmail) return;
+
+    try {
+      await updateDoc(doc(db, 'authorized_emails', editingAuthEmail.id), {
+        name: editAuthName.trim() || editingAuthEmail.name,
+        role: editAuthRole.trim() || 'Employee',
+        color: editAuthColor || 'emerald',
+        updatedAt: serverTimestamp(),
+        updatedBy: currentName
+      });
+
+      setEditingAuthEmail(null);
+    } catch (err) {
+      console.error("Error updating authorized email:", err);
     }
   };
 
@@ -869,13 +892,27 @@ export default function Team() {
                           {item.role || 'Employee'}
                         </span>
                         {hasAdminAccess(user?.email) && (
-                          <button
-                            onClick={() => handleRevokeAccess(item.id, item.email)}
-                            title="Revoke access"
-                            className="p-2 text-gray-400 hover:text-red-400 hover:bg-red-500/10 rounded-lg transition-colors border border-transparent hover:border-red-500/20"
-                          >
-                            <Trash2 className="w-4 h-4" />
-                          </button>
+                          <div className="flex items-center gap-1">
+                            <button
+                              onClick={() => {
+                                setEditingAuthEmail(item);
+                                setEditAuthName(item.name || '');
+                                setEditAuthRole(item.role || 'Employee');
+                                setEditAuthColor(item.color || 'emerald');
+                              }}
+                              title="Edit Member Role & Details"
+                              className="p-2 text-gray-400 hover:text-white hover:bg-white/10 rounded-lg transition-colors border border-transparent hover:border-white/10"
+                            >
+                              <Pencil className="w-3.5 h-3.5" />
+                            </button>
+                            <button
+                              onClick={() => handleRevokeAccess(item.id, item.email)}
+                              title="Revoke access"
+                              className="p-2 text-gray-400 hover:text-red-400 hover:bg-red-500/10 rounded-lg transition-colors border border-transparent hover:border-red-500/20"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
                         )}
                       </div>
                     </div>
@@ -1049,6 +1086,169 @@ export default function Team() {
                 >
                   <ShieldCheck className="w-4 h-4" />
                   Grant Access
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Edit Allowed Member Modal */}
+      {editingAuthEmail && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4 animate-in fade-in" onClick={() => setEditingAuthEmail(null)}>
+          <div className="glass-card w-full max-w-lg p-6 rounded-2xl border border-white/10 shadow-2xl animate-in zoom-in-95 max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+            <div className="flex justify-between items-center mb-5 pb-3 border-b border-white/10">
+              <div className="flex items-center gap-2">
+                <Pencil className="w-5 h-5 text-nyghto-orange" />
+                <h3 className="font-bold text-white text-lg">Edit Member Role & Details</h3>
+              </div>
+              <button onClick={() => setEditingAuthEmail(null)} className="p-2 text-gray-400 hover:text-white rounded-lg hover:bg-white/5 transition-colors">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <form onSubmit={handleUpdateAuthorizedEmail} className="space-y-4">
+              <div>
+                <label className="block text-xs font-semibold text-gray-400 uppercase tracking-wider mb-1.5">
+                  Gmail Address
+                </label>
+                <input
+                  type="text"
+                  disabled
+                  value={editingAuthEmail.email}
+                  className="w-full bg-nyghto-dark/50 border border-white/5 rounded-lg py-2 px-3 text-gray-400 cursor-not-allowed text-sm font-mono"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-gray-400 uppercase tracking-wider mb-1.5">
+                  Full Name
+                </label>
+                <input
+                  type="text"
+                  placeholder="e.g. Rahul Sharma"
+                  value={editAuthName}
+                  onChange={e => setEditAuthName(e.target.value)}
+                  className="w-full bg-nyghto-dark border border-white/10 rounded-lg py-2 px-3 text-white focus:outline-none focus:border-nyghto-orange text-sm"
+                />
+              </div>
+
+              {/* Custom Role Input & Quick Presets */}
+              <div>
+                <label className="block text-xs font-semibold text-gray-400 uppercase tracking-wider mb-1.5">
+                  Assigned Custom Role *
+                </label>
+
+                {/* Quick Role Preset Pills */}
+                <div className="flex flex-wrap gap-1.5 mb-2.5">
+                  {[
+                    'Employee',
+                    'Developer',
+                    'UI/UX Designer',
+                    'Product Manager',
+                    'Marketing',
+                    'Video Editor',
+                    'Sales',
+                    'Intern'
+                  ].map(r => (
+                    <button
+                      key={r}
+                      type="button"
+                      onClick={() => setEditAuthRole(r)}
+                      className={`px-2.5 py-1 text-xs rounded-lg border transition-all ${
+                        editAuthRole.toLowerCase() === r.toLowerCase()
+                          ? 'bg-nyghto-orange text-white border-nyghto-orange font-bold shadow-[0_0_8px_rgba(255,107,0,0.3)]'
+                          : 'bg-white/5 text-gray-300 border-white/10 hover:border-white/20'
+                      }`}
+                    >
+                      {r}
+                    </button>
+                  ))}
+                </div>
+
+                {/* Direct Custom Role text input */}
+                <input
+                  type="text"
+                  required
+                  placeholder="Type any custom role (e.g. Lead Flutter Developer, AI Engineer...)"
+                  value={editAuthRole}
+                  onChange={e => setEditAuthRole(e.target.value)}
+                  className="w-full bg-nyghto-dark border border-white/10 rounded-lg py-2 px-3 text-white focus:outline-none focus:border-nyghto-orange text-sm"
+                />
+              </div>
+
+              {/* Custom Color Selector */}
+              <div>
+                <label className="block text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">
+                  Badge & Profile Color
+                </label>
+                <div className="grid grid-cols-4 sm:grid-cols-8 gap-2">
+                  {COLOR_PRESETS.map(c => {
+                    const isSelected = editAuthColor === c.id;
+                    return (
+                      <button
+                        key={c.id}
+                        type="button"
+                        onClick={() => setEditAuthColor(c.id)}
+                        className={`flex flex-col items-center justify-center p-2 rounded-xl border transition-all ${
+                          isSelected
+                            ? `${c.bg} ${c.border} ring-2 ring-white/40 scale-105`
+                            : 'bg-white/5 border-white/10 hover:border-white/20'
+                        }`}
+                      >
+                        <span className="w-5 h-5 rounded-full mb-1 shadow-sm" style={{ backgroundColor: c.dot }} />
+                        <span className={`text-[10px] font-semibold ${isSelected ? c.text : 'text-gray-400'}`}>
+                          {c.name}
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Live Preview Card */}
+              {editAuthRole && (
+                <div className="p-3 bg-white/5 border border-white/10 rounded-xl flex items-center justify-between mt-2">
+                  <div className="flex items-center gap-3">
+                    {(() => {
+                      const colorObj = COLOR_PRESETS.find(c => c.id === editAuthColor) || COLOR_PRESETS[2];
+                      return (
+                        <>
+                          <div className={`w-8 h-8 rounded-full ${colorObj.bg} ${colorObj.text} flex items-center justify-center text-xs font-bold border ${colorObj.border}`}>
+                            {editAuthName ? editAuthName.charAt(0).toUpperCase() : 'U'}
+                          </div>
+                          <div>
+                            <div className="text-xs font-bold text-white">{editAuthName || 'Member'}</div>
+                            <div className="text-[10px] text-gray-400">{editingAuthEmail.email}</div>
+                          </div>
+                        </>
+                      );
+                    })()}
+                  </div>
+                  {(() => {
+                    const colorObj = COLOR_PRESETS.find(c => c.id === editAuthColor) || COLOR_PRESETS[2];
+                    return (
+                      <span className={`text-xs font-semibold px-2.5 py-1 rounded-lg border ${colorObj.bg} ${colorObj.text} ${colorObj.border}`}>
+                        {editAuthRole}
+                      </span>
+                    );
+                  })()}
+                </div>
+              )}
+
+              <div className="pt-3 border-t border-white/10 flex justify-end gap-3">
+                <button
+                  type="button"
+                  onClick={() => setEditingAuthEmail(null)}
+                  className="px-4 py-2 rounded-lg text-sm font-medium hover:bg-white/5 transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="btn-primary text-sm flex items-center gap-1.5"
+                >
+                  Save Changes
                 </button>
               </div>
             </form>
