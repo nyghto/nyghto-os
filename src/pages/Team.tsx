@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Search, Plus, Filter, FileText, CheckCircle2, Clock, AlertCircle, Users, X, MoreVertical, Eye } from 'lucide-react';
+import { Search, Plus, Filter, FileText, CheckCircle2, Clock, AlertCircle, Users, X, MoreVertical, Eye, Trash2, Pencil } from 'lucide-react';
 import { collection, onSnapshot, addDoc, query, orderBy, serverTimestamp, doc, updateDoc, deleteDoc, setDoc } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import { useAuth } from '../contexts/AuthContext';
@@ -448,58 +448,38 @@ export default function Team() {
                         </span>
                       </td>
                       <td className="px-6 py-4 text-right whitespace-nowrap">
-                        <div className="flex items-center justify-end gap-1">
+                        <div className="flex items-center justify-end gap-1.5">
                           <button
                             onClick={() => setViewingReport(report)}
                             title="View Report Details"
-                            className="p-1.5 text-gray-400 hover:text-nyghto-orange hover:bg-white/5 rounded-lg transition-colors"
+                            className="p-2 text-gray-400 hover:text-nyghto-orange hover:bg-nyghto-orange/10 rounded-lg transition-colors border border-transparent hover:border-nyghto-orange/20"
                           >
                             <Eye className="w-4 h-4" />
                           </button>
-                          <div className="relative inline-block text-left">
-                            <button 
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                setActiveDropdown(activeDropdown === report.id ? null : report.id);
-                              }}
-                              className="p-1.5 text-gray-500 hover:text-white rounded-lg hover:bg-white/5 transition-colors"
-                            >
-                              <MoreVertical className="w-4 h-4" />
-                            </button>
-                            {activeDropdown === report.id && (
-                              <div className="absolute right-0 mt-2 bg-nyghto-dark border border-white/10 shadow-xl rounded-lg w-36 py-1 z-10">
-                                <button
-                                  onClick={() => {
-                                    setViewingReport(report);
-                                    setActiveDropdown(null);
-                                  }}
-                                  className="w-full text-left px-4 py-2 text-sm text-white hover:bg-white/5 transition-colors flex items-center gap-2"
-                                >
-                                  <Eye className="w-3.5 h-3.5 text-nyghto-orange" />
-                                  View Details
-                                </button>
-                                <button
-                                  onClick={() => {
-                                    setEditingReport(report);
-                                    setEditTitle(report.title || '');
-                                    setEditDescription(report.description || '');
-                                    setEditHours(report.hours.toString());
-                                    setEditTasksDone(report.tasksDone.toString());
-                                    setActiveDropdown(null);
-                                  }}
-                                  className="w-full text-left px-4 py-2 text-sm text-white hover:bg-white/5 transition-colors"
-                                >
-                                  Edit Report
-                                </button>
-                                <button
-                                  onClick={() => deleteReport(report.id)}
-                                  className="w-full text-left px-4 py-2 text-sm text-red-500 hover:bg-white/5 transition-colors"
-                                >
-                                  Delete
-                                </button>
-                              </div>
-                            )}
-                          </div>
+                          <button
+                            onClick={() => {
+                              setEditingReport(report);
+                              setEditTitle(report.title || '');
+                              setEditDescription(report.description || '');
+                              setEditHours(report.hours.toString());
+                              setEditTasksDone(report.tasksDone.toString());
+                            }}
+                            title="Edit Report"
+                            className="p-2 text-gray-400 hover:text-white hover:bg-white/10 rounded-lg transition-colors border border-transparent hover:border-white/20"
+                          >
+                            <Pencil className="w-4 h-4" />
+                          </button>
+                          <button
+                            onClick={() => {
+                              if (window.confirm("Are you sure you want to delete this report?")) {
+                                deleteReport(report.id);
+                              }
+                            }}
+                            title="Delete Report"
+                            className="p-2 text-gray-400 hover:text-red-400 hover:bg-red-500/10 rounded-lg transition-colors border border-transparent hover:border-red-500/20"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
                         </div>
                       </td>
                     </tr>
@@ -998,10 +978,43 @@ export default function Team() {
               </div>
             </div>
 
-            <div className="pt-3 border-t border-white/10 flex justify-end">
-              <button onClick={() => setViewingReport(null)} className="px-4 py-2 bg-white/10 hover:bg-white/20 text-white rounded-lg text-sm font-medium transition-colors">
-                Close
+            <div className="pt-4 border-t border-white/10 flex justify-between items-center gap-3">
+              <button 
+                onClick={() => {
+                  if (window.confirm("Are you sure you want to delete this report?")) {
+                    deleteReport(viewingReport.id);
+                    setViewingReport(null);
+                  }
+                }}
+                className="px-3.5 py-2 bg-red-500/10 hover:bg-red-500/20 text-red-400 border border-red-500/20 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-colors"
+              >
+                <Trash2 className="w-4 h-4" />
+                Delete Report
               </button>
+
+              <div className="flex gap-2">
+                <button 
+                  onClick={() => {
+                    const r = viewingReport;
+                    setViewingReport(null);
+                    setEditingReport(r);
+                    setEditTitle(r.title || '');
+                    setEditDescription(r.description || '');
+                    setEditHours(r.hours.toString());
+                    setEditTasksDone(r.tasksDone.toString());
+                  }}
+                  className="px-3.5 py-2 bg-white/5 hover:bg-white/10 text-white border border-white/10 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-colors"
+                >
+                  <Pencil className="w-3.5 h-3.5" />
+                  Edit
+                </button>
+                <button 
+                  onClick={() => setViewingReport(null)} 
+                  className="px-4 py-2 bg-white/10 hover:bg-white/20 text-white rounded-lg text-xs font-semibold transition-colors"
+                >
+                  Close
+                </button>
+              </div>
             </div>
           </div>
         </div>
