@@ -782,7 +782,7 @@ export default function Team() {
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               {[
                 { email: 'team.nyghto@gmail.com', name: 'Nyghto Admin', role: 'Super Admin', avatar: null },
-                { email: 'salurinshan9539@gmail.com', name: 'Salih Rinshan', role: 'CEO', avatar: '/rinshan.jpg' },
+                { email: 'salurinshan9539@gmail.com', name: 'Salu Rinshan', role: 'CEO', avatar: '/rinshan.jpg' },
                 { email: 'amaldas.co@gmail.com', name: 'Amal Das', role: 'CTO', avatar: '/amal.jpg' },
                 { email: 'shahalmuhammed404@gmail.com', name: 'Shahal Muhammed', role: 'CPO', avatar: '/shahal.jpg' }
               ].map(founder => (
