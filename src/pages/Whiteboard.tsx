@@ -3,15 +3,21 @@ import { Tldraw, Editor, DefaultColorStyle, DefaultHorizontalAlignStyle, createS
 import 'tldraw/tldraw.css';
 import { useTheme } from '../contexts/ThemeContext';
 import { useAuth } from '../contexts/AuthContext';
-import { hasAdminAccess } from '../utils/permissions';
+import { db } from '../lib/firebase';
+import { doc, onSnapshot, setDoc } from 'firebase/firestore';
+import { Cloud, CloudCheck, Loader2 } from 'lucide-react';
 
 export default function Whiteboard() {
   const { theme } = useTheme();
   const { user } = useAuth();
   const [editor, setEditor] = useState<Editor | null>(null);
   const [scrollY, setScrollY] = useState(0);
+  const [syncStatus, setSyncStatus] = useState<'synced' | 'saving' | 'loading'>('loading');
   const MAX_SCROLL = 5000; // max px they can scroll down
   const containerRef = useRef<HTMLDivElement>(null);
+  const isApplyingRemoteRef = useRef(false);
+  const saveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const lastSavedJsonRef = useRef<string>('');
 
   const handleMount = (ed: Editor) => {
     setEditor(ed);
@@ -54,6 +60,87 @@ export default function Whiteboard() {
       }
     });
   };
+
+  // Real-time Cloud Firestore synchronization across all team member logins
+  useEffect(() => {
+    if (!editor) return;
+
+    const docRef = doc(db, 'whiteboards', 'main_board');
+
+    // 1. Listen to remote updates from other users in Firebase
+    const unsubscribeDoc = onSnapshot(docRef, (docSnap) => {
+      if (!docSnap.exists()) {
+        setSyncStatus('synced');
+        return;
+      }
+
+      const data = docSnap.data();
+      if (data && data.snapshotJson) {
+        if (data.snapshotJson === lastSavedJsonRef.current) {
+          setSyncStatus('synced');
+          return;
+        }
+
+        try {
+          const parsed = JSON.parse(data.snapshotJson);
+          isApplyingRemoteRef.current = true;
+          editor.store.loadSnapshot(parsed);
+          lastSavedJsonRef.current = data.snapshotJson;
+          setSyncStatus('synced');
+        } catch (err) {
+          console.error("Error loading remote whiteboard snapshot:", err);
+        } finally {
+          setTimeout(() => {
+            isApplyingRemoteRef.current = false;
+          }, 150);
+        }
+      } else {
+        setSyncStatus('synced');
+      }
+    }, (error) => {
+      console.error("Whiteboard Firestore subscription error:", error);
+      setSyncStatus('synced');
+    });
+
+    // 2. Listen to local changes and save to Firebase Cloud for all team members
+    const unsubscribeStore = editor.store.listen((entry) => {
+      if (isApplyingRemoteRef.current) return;
+      if (entry.source === 'user') {
+        setSyncStatus('saving');
+        if (saveTimeoutRef.current) {
+          clearTimeout(saveTimeoutRef.current);
+        }
+
+        saveTimeoutRef.current = setTimeout(async () => {
+          try {
+            const snap = editor.store.getSnapshot();
+            const jsonStr = JSON.stringify(snap);
+            if (jsonStr === lastSavedJsonRef.current) {
+              setSyncStatus('synced');
+              return;
+            }
+
+            lastSavedJsonRef.current = jsonStr;
+            await setDoc(docRef, {
+              snapshotJson: jsonStr,
+              updatedAt: Date.now(),
+              updatedBy: user?.email || 'Authorized User'
+            }, { merge: true });
+            setSyncStatus('synced');
+          } catch (err) {
+            console.error("Error saving whiteboard to cloud:", err);
+            setSyncStatus('synced');
+          }
+        }, 600);
+      }
+    });
+
+    return () => {
+      unsubscribeDoc();
+      unsubscribeStore();
+      if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
+    };
+  }, [editor, user?.email]);
 
   // Intercept wheel events to create a custom vertical scroll behavior
   useEffect(() => {
@@ -130,18 +217,39 @@ export default function Whiteboard() {
         `}
       </style>
       <div className="animate-in fade-in duration-500 flex flex-col h-full w-full min-h-[70vh]">
-      <div className="mb-6">
-        <h1 className="text-3xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-gray-300 to-gray-500">
-          Black Board
-        </h1>
-        <p className="text-theme-muted mt-2">Plan your ideas, draw mind maps, and brainstorm visually.</p>
+      <div className="mb-6 flex flex-col md:flex-row md:items-center justify-between gap-4">
+        <div>
+          <h1 className="text-3xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-gray-300 to-gray-500">
+            Black Board
+          </h1>
+          <p className="text-theme-muted mt-2">Shared interactive canvas for the entire team in real time.</p>
+        </div>
+
+        {/* Live Team Sync Badge */}
+        <div className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-white/5 border border-white/10 w-fit">
+          {syncStatus === 'saving' ? (
+            <>
+              <Loader2 className="w-4 h-4 text-nyghto-orange animate-spin" />
+              <span className="text-xs font-semibold text-nyghto-orange">Syncing changes...</span>
+            </>
+          ) : syncStatus === 'loading' ? (
+            <>
+              <Loader2 className="w-4 h-4 text-blue-400 animate-spin" />
+              <span className="text-xs font-semibold text-blue-400">Loading Cloud Board...</span>
+            </>
+          ) : (
+            <>
+              <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
+              <span className="text-xs font-semibold text-green-400">Live Synced (All Members)</span>
+            </>
+          )}
+        </div>
       </div>
       
       <div className="flex-1 w-full flex gap-4">
         {/* Main Canvas Container */}
         <div ref={containerRef} className="flex-1 rounded-2xl overflow-hidden shadow-2xl relative z-10 isolate bg-black border border-white/10" style={{ minHeight: '600px' }}>
           <Tldraw 
-            persistenceKey="nyghto-whiteboard-data" 
             darkMode={true} 
             onMount={handleMount}
             components={{
