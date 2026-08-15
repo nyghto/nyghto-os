@@ -19,13 +19,12 @@ const COLOR_PRESETS = [
 ];
 
 export default function Team() {
-  const { userData, user, effectiveEmail, effectiveRole, effectiveName, effectiveAvatar } = useAuth();
+  const { userData, user } = useAuth();
   const { teamMembers, updateMemberAvatar } = useTeam();
-  const activeEmail = effectiveEmail || user?.email;
-  const isMainAdmin = isSuperAdmin(activeEmail);
-  const currentRole = effectiveRole || getUserRole(activeEmail, userData?.role);
-  const currentName = effectiveName || getUserName(activeEmail, userData?.name);
-  const currentAvatar = effectiveAvatar || getUserAvatar(activeEmail);
+  const isMainAdmin = isSuperAdmin(user?.email);
+  const currentRole = getUserRole(user?.email, userData?.role);
+  const currentName = getUserName(user?.email, userData?.name);
+  const currentAvatar = getUserAvatar(user?.email);
 
   const [tab, setTab] = useState('Daily Reports');
   const [reports, setReports] = useState<Report[]>([]);

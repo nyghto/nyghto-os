@@ -30,9 +30,8 @@ const formatDate = (dateStr: string) => {
 };
 
 export default function Tasks() {
-  const { user, userData, effectiveEmail, effectiveName } = useAuth();
-  const activeEmail = effectiveEmail || user?.email;
-  const isMainAdmin = isSuperAdmin(activeEmail);
+  const { user, userData } = useAuth();
+  const isMainAdmin = isSuperAdmin(user?.email);
   const { teamMembers } = useTeam();
   const [tasks, setTasks] = useState<Task[]>([]);
   const [activeDropdown, setActiveDropdown] = useState<string | null>(null);
