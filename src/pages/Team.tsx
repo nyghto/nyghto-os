@@ -111,6 +111,7 @@ export default function Team() {
 
   const handleAddAuthorizedEmail = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!isMainAdmin) return;
     const emailClean = newEmail.toLowerCase().trim();
     if (!emailClean) return;
 
@@ -155,6 +156,7 @@ export default function Team() {
   };
 
   const handleRevokeAccess = async (docId: string, email: string) => {
+    if (!isMainAdmin) return;
     if (window.confirm(`Are you sure you want to revoke access for "${email}"? They will be immediately blocked from accessing Nyghto OS.`)) {
       try {
         await deleteDoc(doc(db, 'authorized_emails', docId));
@@ -172,7 +174,7 @@ export default function Team() {
 
   const handleUpdateAuthorizedEmail = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!editingAuthEmail) return;
+    if (!isMainAdmin || !editingAuthEmail) return;
 
     try {
       await updateDoc(doc(db, 'authorized_emails', editingAuthEmail.id), {
@@ -402,7 +404,7 @@ export default function Team() {
           <p className="text-gray-400">Manage your team, view daily work reports, and control workspace access.</p>
         </div>
         <div className="flex items-center gap-3">
-          {hasAdminAccess(user?.email) && (
+          {isMainAdmin && (
             <button 
               onClick={() => setIsAddingEmail(true)}
               className="px-4 py-2 bg-white/5 hover:bg-white/10 text-white border border-white/10 rounded-lg text-sm font-medium flex items-center gap-2 transition-all shadow-sm"
@@ -421,12 +423,12 @@ export default function Team() {
       </div>
 
       {/* Big Tab Boxes */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-4">
+      <div className={`grid grid-cols-1 sm:grid-cols-2 ${isMainAdmin ? 'lg:grid-cols-4' : 'lg:grid-cols-3'} gap-4 mb-4`}>
         {[
           { id: 'Daily Reports', icon: FileText, desc: 'View & submit daily logs' },
           { id: 'Team Members', icon: Users, desc: 'Manage your team profiles' },
           { id: 'Attendance', icon: CheckCircle2, desc: 'Track daily presence' },
-          { id: 'Access Whitelist', icon: ShieldCheck, desc: 'Manage allowed Gmails' }
+          ...(isMainAdmin ? [{ id: 'Access Whitelist', icon: ShieldCheck, desc: 'Manage allowed Gmails' }] : [])
         ].map(t => (
           <button
             key={t.id}
@@ -798,7 +800,7 @@ export default function Team() {
         </div>
       )}
 
-      {tab === 'Access Whitelist' && (
+      {tab === 'Access Whitelist' && isMainAdmin && (
         <div className="space-y-6 animate-in fade-in">
           <div className="glass-card p-6 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
             <div>
@@ -810,7 +812,7 @@ export default function Team() {
                 Only whitelisted Google accounts can access Nyghto OS. If anyone else attempts to log in, their access is blocked automatically.
               </p>
             </div>
-            {hasAdminAccess(user?.email) && (
+            {isMainAdmin && (
               <button
                 onClick={() => setIsAddingEmail(true)}
                 className="btn-primary flex items-center gap-2 text-sm whitespace-nowrap"
