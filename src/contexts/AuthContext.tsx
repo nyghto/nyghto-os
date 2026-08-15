@@ -4,6 +4,15 @@ import { auth, db } from '../lib/firebase';
 import { doc, getDoc, setDoc, collection, query, where, getDocs } from 'firebase/firestore';
 import { CORE_EMAILS, getUserRole, getUserName } from '../utils/permissions';
 
+export const getMemberIdByEmail = (email: string | null | undefined): string => {
+  if (!email) return 'unknown';
+  const lower = email.toLowerCase().trim();
+  if (lower === 'salurinshan9539@gmail.com') return 'u1';
+  if (lower === 'amaldas.co@gmail.com') return 'u2';
+  if (lower === 'shahalmuhammed404@gmail.com') return 'u3';
+  return lower.replace(/[@.]/g, '_');
+};
+
 interface UserData {
   role: string;
   name: string;
@@ -15,6 +24,7 @@ interface AuthContextType {
   loading: boolean;
   unauthorizedError: string | null;
   clearUnauthorizedError: () => void;
+  logout: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType>({ 
@@ -22,7 +32,8 @@ const AuthContext = createContext<AuthContextType>({
   userData: null, 
   loading: true,
   unauthorizedError: null,
-  clearUnauthorizedError: () => {}
+  clearUnauthorizedError: () => {},
+  logout: async () => {}
 });
 
 export const useAuth = () => useContext(AuthContext);
@@ -71,6 +82,19 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         setUnauthorizedError(null);
         setUser(currentUser);
 
+        // Automatic Presence: Set user as Active
+        const memberId = getMemberIdByEmail(email);
+        try {
+          await setDoc(doc(db, 'teamStatus', memberId), {
+            status: 'Active',
+            lastActive: Date.now(),
+            email,
+            name: assignedName
+          }, { merge: true });
+        } catch (e) {
+          console.error("Error setting presence:", e);
+        }
+
         // Fetch or create user doc
         try {
           const userRef = doc(db, 'users', currentUser.uid);
@@ -94,11 +118,56 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       setLoading(false);
     });
 
-    return unsubscribe;
+    // Heartbeat to keep status Active
+    const heartbeatInterval = setInterval(() => {
+      if (auth.currentUser?.email) {
+        const currentEmail = auth.currentUser.email.toLowerCase().trim();
+        const mid = getMemberIdByEmail(currentEmail);
+        setDoc(doc(db, 'teamStatus', mid), {
+          status: 'Active',
+          lastActive: Date.now(),
+          email: currentEmail
+        }, { merge: true }).catch(() => {});
+      }
+    }, 20000);
+
+    const handleBeforeUnload = () => {
+      if (auth.currentUser?.email) {
+        const currentEmail = auth.currentUser.email.toLowerCase().trim();
+        const mid = getMemberIdByEmail(currentEmail);
+        setDoc(doc(db, 'teamStatus', mid), {
+          status: 'Inactive',
+          lastActive: Date.now(),
+          email: currentEmail
+        }, { merge: true }).catch(() => {});
+      }
+    };
+
+    window.addEventListener('beforeunload', handleBeforeUnload);
+
+    return () => {
+      unsubscribe();
+      clearInterval(heartbeatInterval);
+      window.removeEventListener('beforeunload', handleBeforeUnload);
+    };
   }, []);
 
+  const logout = async () => {
+    if (user?.email) {
+      const mid = getMemberIdByEmail(user.email);
+      try {
+        await setDoc(doc(db, 'teamStatus', mid), {
+          status: 'Inactive',
+          lastActive: Date.now(),
+          email: user.email
+        }, { merge: true });
+      } catch (e) {}
+    }
+    await signOut(auth);
+  };
+
   return (
-    <AuthContext.Provider value={{ user, userData, loading, unauthorizedError, clearUnauthorizedError }}>
+    <AuthContext.Provider value={{ user, userData, loading, unauthorizedError, clearUnauthorizedError, logout }}>
       {!loading && children}
     </AuthContext.Provider>
   );

@@ -86,9 +86,9 @@ export default function Team() {
     });
 
     const unsubscribeTeamStatus = onSnapshot(collection(db, 'teamStatus'), (snapshot) => {
-      const statuses: Record<string, string> = {};
+      const statuses: Record<string, any> = {};
       snapshot.docs.forEach(doc => {
-        statuses[doc.id] = doc.data().status;
+        statuses[doc.id] = doc.data();
       });
       setTeamStatus(statuses);
     });
@@ -348,12 +348,16 @@ export default function Team() {
     }
   };
 
-  const updateMemberStatus = async (memberId: string, status: string) => {
-    try {
-      await setDoc(doc(db, 'teamStatus', memberId), { status }, { merge: true });
-    } catch (error) {
-      console.error("Error updating team status:", error);
+  const isMemberActive = (memberId: string) => {
+    const data = teamStatus[memberId];
+    if (!data) return false;
+    if (data.status === 'Active') {
+      if (data.lastActive) {
+        return (Date.now() - data.lastActive) < 90000;
+      }
+      return true;
     }
+    return false;
   };
 
 
@@ -630,28 +634,53 @@ export default function Team() {
 
       {tab === 'Team Members' && (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {teamMembers.map(member => (
-            <div key={member.id} className="glass-card p-6 flex flex-col items-center text-center hover:border-nyghto-orange/30 transition-colors">
-              {member.avatarImage ? (
-                <img src={member.avatarImage} alt={member.name} className="w-20 h-20 rounded-full object-cover mb-4 shadow-lg ring-2 ring-white/10" />
-              ) : (
-                <div className={`w-20 h-20 rounded-full ${member.color} flex items-center justify-center text-2xl font-bold text-white mb-4 shadow-lg`}>
-                  {member.initial}
-                </div>
-              )}
-              <h3 className="text-xl font-bold text-white mb-1">{member.name}</h3>
-              <p className="text-sm text-gray-400 mb-4">{member.role}</p>
-              
-              <div className="flex gap-2 w-full mt-2">
-                <button 
-                  onClick={() => setSelectedProfile(member)}
-                  className="w-full py-2 bg-white/5 hover:bg-white/10 rounded-lg text-sm font-medium transition-colors border border-white/10"
+          {teamMembers.map(member => {
+            const active = isMemberActive(member.id);
+            return (
+              <div key={member.id} className="glass-card p-6 flex flex-col items-center text-center hover:border-nyghto-orange/30 transition-colors relative group">
+                {/* Automatic Live Status Badge */}
+                <div 
+                  className="absolute top-4 right-4 flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold border backdrop-blur-sm transition-all"
+                  style={{
+                    backgroundColor: active ? 'rgba(34, 197, 94, 0.1)' : 'rgba(255, 255, 255, 0.05)',
+                    borderColor: active ? 'rgba(34, 197, 94, 0.3)' : 'rgba(255, 255, 255, 0.1)',
+                    color: active ? '#4ade80' : '#9ca3af'
+                  }}
                 >
-                  View Profile
-                </button>
+                  <span className={`w-2 h-2 rounded-full ${active ? 'bg-green-400 animate-pulse' : 'bg-gray-500'}`} />
+                  <span>{active ? 'Active' : 'Inactive'}</span>
+                </div>
+
+                <div className="relative mb-4 mt-2">
+                  {member.avatarImage ? (
+                    <img src={member.avatarImage} alt={member.name} className="w-20 h-20 rounded-full object-cover shadow-lg ring-2 ring-white/10" />
+                  ) : (
+                    <div className={`w-20 h-20 rounded-full ${member.color} flex items-center justify-center text-2xl font-bold text-white shadow-lg`}>
+                      {member.initial}
+                    </div>
+                  )}
+                  {/* Status dot on avatar */}
+                  <span className={`absolute bottom-0 right-0 w-5 h-5 rounded-full border-2 border-[#121218] flex items-center justify-center ${
+                    active ? 'bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.8)]' : 'bg-gray-500'
+                  }`}>
+                    {active && <span className="w-2 h-2 bg-white rounded-full animate-ping opacity-75" />}
+                  </span>
+                </div>
+
+                <h3 className="text-xl font-bold text-white mb-0.5">{member.name}</h3>
+                <p className="text-sm text-nyghto-orange font-medium mb-4">{member.role}</p>
+                
+                <div className="flex gap-2 w-full mt-2">
+                  <button 
+                    onClick={() => setSelectedProfile(member)}
+                    className="w-full py-2 bg-white/5 hover:bg-white/10 rounded-lg text-sm font-medium transition-colors border border-white/10"
+                  >
+                    View Profile
+                  </button>
+                </div>
               </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       )}
 
@@ -1667,20 +1696,18 @@ export default function Team() {
                 <div className="text-sm font-medium text-white">{selectedProfile.phone}</div>
               </div>
               <div className="bg-white/5 p-3 rounded-lg border border-white/10 flex items-center justify-between">
-                <div className="text-xs text-gray-400">Status</div>
-                <select 
-                  value={teamStatus[selectedProfile.id] || 'Active'}
-                  onChange={(e) => updateMemberStatus(selectedProfile.id, e.target.value)}
-                  className="bg-transparent text-sm font-medium focus:outline-none cursor-pointer text-right appearance-none"
-                  style={{
-                    color: (teamStatus[selectedProfile.id] || 'Active') === 'Active' ? '#4ade80' : 
-                           ((teamStatus[selectedProfile.id] === 'On Leave') ? '#facc15' : '#f87171')
-                  }}
-                >
-                  <option value="Active" className="text-theme-text bg-theme-bg">Active</option>
-                  <option value="On Leave" className="text-theme-text bg-theme-bg">On Leave</option>
-                  <option value="Inactive" className="text-theme-text bg-theme-bg">Inactive</option>
-                </select>
+                <div className="text-xs text-gray-400">Live Status</div>
+                {(() => {
+                  const active = isMemberActive(selectedProfile.id);
+                  return (
+                    <div className="flex items-center gap-2">
+                      <span className={`w-2 h-2 rounded-full ${active ? 'bg-green-400 animate-pulse' : 'bg-gray-500'}`} />
+                      <span className={`text-sm font-semibold ${active ? 'text-green-400' : 'text-gray-400'}`}>
+                        {active ? 'Active Now' : 'Inactive'}
+                      </span>
+                    </div>
+                  );
+                })()}
               </div>
             </div>
           </div>

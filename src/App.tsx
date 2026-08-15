@@ -21,7 +21,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 
 function Sidebar() {
   const location = useLocation();
-  const { user, userData } = useAuth();
+  const { user, userData, logout } = useAuth();
   const role = getUserRole(user?.email, userData?.role);
   const name = getUserName(user?.email, userData?.name);
   const avatar = getUserAvatar(user?.email);
@@ -88,7 +88,7 @@ function Sidebar() {
               </div>
             </div>
             <button 
-              onClick={() => auth.signOut()}
+              onClick={() => logout()}
               className="text-theme-muted hover:text-red-400 opacity-0 group-hover:opacity-100 transition-opacity"
               title="Sign Out"
             >
