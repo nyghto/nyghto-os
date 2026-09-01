@@ -109,8 +109,16 @@ export default function AttendanceReport() {
                     </div>
                   )}
                   <div>
-                    <h4 className="font-bold text-theme-text group-hover:text-nyghto-orange transition-colors">{member.name}</h4>
-                    <div className="text-sm text-theme-muted mt-1">{score} / {maxMarksForMonth} Marks</div>
+                    <h4 className="font-bold text-theme-text group-hover:text-nyghto-orange transition-colors flex items-center gap-1.5 flex-wrap">
+                      <span>{member.name}</span>
+                      <span className="text-[10px] text-nyghto-orange border border-nyghto-orange/30 px-1.5 py-0.5 rounded font-bold uppercase">{member.role}</span>
+                      {member.duty && (
+                        <span className="text-[10px] bg-purple-500/20 text-purple-300 border border-purple-500/30 px-1.5 py-0.5 rounded font-medium">
+                          🎯 {member.duty}
+                        </span>
+                      )}
+                    </h4>
+                    <div className="text-xs text-theme-muted mt-1">{score} / {maxMarksForMonth} Marks</div>
                   </div>
                 </div>
                 <div className="flex flex-col items-end">

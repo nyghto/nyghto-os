@@ -10,6 +10,8 @@ export interface TeamMember {
   color: string;
   phone: string;
   email: string;
+  duty?: string; // Legacy string
+  duties?: string[]; // Array of multiple duties e.g. ["Social Media Controller", "Ads Running", "Financial Control"]
   avatarImage?: string; // Base64 image
   customColorKey?: string;
 }
@@ -26,9 +28,9 @@ const COLOR_MAP: Record<string, string> = {
 };
 
 const BASE_FOUNDERS: TeamMember[] = [
-  { id: 'u1', name: 'RINSHAN', role: 'CEO', initial: 'R', color: 'bg-nyghto-orange', phone: '+91 9539202847', email: 'salurinshan9539@gmail.com', avatarImage: '/rinshan.jpg' },
-  { id: 'u2', name: 'AMAL', role: 'CTO', initial: 'A', color: 'bg-blue-500', phone: '+91 7012028379', email: 'amaldas.co@gmail.com', avatarImage: '/amal.jpg' },
-  { id: 'u3', name: 'SHAHAL', role: 'CPO', initial: 'S', color: 'bg-green-500', phone: '+91 8075911860', email: 'shahalmuhammed404@gmail.com', avatarImage: '/shahal.jpg' },
+  { id: 'u1', name: 'RINSHAN', role: 'CEO', duties: ['Nyra OS Operator'], initial: 'R', color: 'bg-nyghto-orange', phone: '+91 9539202847', email: 'salurinshan9539@gmail.com', avatarImage: '/rinshan.jpg' },
+  { id: 'u2', name: 'AMAL', role: 'CTO', duties: ['Social Media Controller'], initial: 'A', color: 'bg-blue-500', phone: '+91 7012028379', email: 'amaldas.co@gmail.com', avatarImage: '/amal.jpg' },
+  { id: 'u3', name: 'SHAHAL', role: 'CPO', duties: [], initial: 'S', color: 'bg-green-500', phone: '+91 8075911860', email: 'shahalmuhammed404@gmail.com', avatarImage: '/shahal.jpg' },
 ];
 
 interface TeamContextType {
@@ -56,10 +58,16 @@ export const TeamProvider = ({ children }: { children: React.ReactNode }) => {
         const bgClass = COLOR_MAP[colorKey] || 'bg-emerald-500';
         const memberId = email ? email.toLowerCase().trim().replace(/[@.]/g, '_') : docSnap.id;
 
+        const rawDuties = Array.isArray(data.duties) 
+          ? data.duties 
+          : (data.duty !== undefined ? (data.duty ? [data.duty] : []) : undefined);
+
         return {
           id: memberId,
           name: name.toUpperCase(),
           role: data.role || 'Employee',
+          duty: rawDuties && rawDuties.length > 0 ? rawDuties[0] : undefined,
+          duties: rawDuties,
           initial: name.charAt(0).toUpperCase() || 'M',
           color: bgClass,
           phone: data.phone || '+91 0000000000',
@@ -69,8 +77,30 @@ export const TeamProvider = ({ children }: { children: React.ReactNode }) => {
         };
       });
 
-      // Combine base founders + dynamic members without duplicates
-      const combined = [...BASE_FOUNDERS];
+      // Map authorized_emails overrides onto BASE_FOUNDERS, and append extra dynamic members
+      const updatedFounders = BASE_FOUNDERS.map(f => {
+        const foundDoc = snapshot.docs.find(d => d.data().email?.toLowerCase() === f.email.toLowerCase());
+        if (foundDoc) {
+          const data = foundDoc.data();
+          const colorKey = data.color || 'emerald';
+          const docDuties = Array.isArray(data.duties) 
+            ? data.duties 
+            : (data.duty !== undefined ? (data.duty ? [data.duty] : []) : f.duties);
+
+          return {
+            ...f,
+            name: (data.name || f.name).toUpperCase(),
+            role: data.role || f.role,
+            duty: docDuties && docDuties.length > 0 ? docDuties[0] : undefined,
+            duties: docDuties,
+            color: COLOR_MAP[colorKey] || f.color,
+            customColorKey: colorKey
+          };
+        }
+        return f;
+      });
+
+      const combined = [...updatedFounders];
       dynamicMembers.forEach(dm => {
         if (!combined.some(f => f.email.toLowerCase() === dm.email.toLowerCase())) {
           combined.push(dm);

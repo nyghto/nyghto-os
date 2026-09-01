@@ -4,7 +4,7 @@ import { collection, onSnapshot, addDoc, query, orderBy, serverTimestamp, doc, u
 import { db } from '../lib/firebase';
 import { useAuth } from '../contexts/AuthContext';
 import { useTeam } from '../contexts/TeamContext';
-import { hasAdminAccess, isSuperAdmin, isCoreFounder, CORE_EMAILS, getUserRole, getUserName, getUserAvatar } from '../utils/permissions';
+import { hasAdminAccess, isSuperAdmin, isCoreFounder, CORE_EMAILS, getUserRole, getUserName, getUserAvatar, getUserDuty, getUserDuties } from '../utils/permissions';
 import { getOfficeLocation, saveOfficeLocation, verifyAndMarkAutoAttendance, type OfficeLocation, type AutoAttendanceResult } from '../utils/geoAttendance';
 import type { Report } from '../types';
 
@@ -44,6 +44,11 @@ export default function Team() {
   const [attendanceYear, setAttendanceYear] = useState(new Date().getFullYear());
   const [attendanceRecords, setAttendanceRecords] = useState<any[]>([]);
   const [selectedProfile, setSelectedProfile] = useState<any>(null);
+  const [isEditingProfile, setIsEditingProfile] = useState(false);
+  const [profileRole, setProfileRole] = useState('');
+  const [profileDuties, setProfileDuties] = useState<string[]>([]);
+  const [newDutyItem, setNewDutyItem] = useState('');
+  const [profileColor, setProfileColor] = useState('emerald');
   const [teamStatus, setTeamStatus] = useState<Record<string, string>>({});
   const [offDayContextMenu, setOffDayContextMenu] = useState<{ x: number; y: number; day: number } | null>(null);
 
@@ -63,15 +68,18 @@ export default function Team() {
   const [accessRequests, setAccessRequests] = useState<any[]>([]);
   const [reviewingRequest, setReviewingRequest] = useState<any | null>(null);
   const [reqRole, setReqRole] = useState('Employee');
+  const [reqDuty, setReqDuty] = useState('');
   const [reqColor, setReqColor] = useState('emerald');
   const [isAddingEmail, setIsAddingEmail] = useState(false);
   const [newEmail, setNewEmail] = useState('');
   const [newName, setNewName] = useState('');
   const [newRole, setNewRole] = useState('Employee');
+  const [newDuty, setNewDuty] = useState('');
   const [newColor, setNewColor] = useState('emerald');
   const [editingAuthEmail, setEditingAuthEmail] = useState<any | null>(null);
   const [editAuthName, setEditAuthName] = useState('');
   const [editAuthRole, setEditAuthRole] = useState('');
+  const [editAuthDuty, setEditAuthDuty] = useState('');
   const [editAuthColor, setEditAuthColor] = useState('emerald');
 
   // Form State
@@ -249,6 +257,7 @@ export default function Team() {
         email: emailClean,
         name: newName.trim() || emailClean.split('@')[0],
         role: newRole.trim() || 'Employee',
+        duty: newDuty.trim() || undefined,
         color: newColor || 'emerald',
         addedBy: currentName,
         addedByEmail: user?.email || '',
@@ -258,19 +267,21 @@ export default function Team() {
       const colorObj = COLOR_PRESETS.find(c => c.id === newColor) || COLOR_PRESETS[2];
 
       await addDoc(collection(db, 'activities'), {
-        text: `${currentName} granted workspace access to ${emailClean} (${newRole.trim() || 'Employee'})`,
+        text: `${currentName} granted workspace access to ${emailClean} (${newRole.trim() || 'Employee'}${newDuty ? ` - ${newDuty}` : ''})`,
         type: 'general',
         iconColor: colorObj.text,
-        createdAt: serverTimestamp()
+        createdAt: Date.now()
       });
 
+      setIsAddingEmail(false);
       setNewEmail('');
       setNewName('');
       setNewRole('Employee');
+      setNewDuty('');
       setNewColor('emerald');
-      setIsAddingEmail(false);
     } catch (err) {
       console.error("Error adding authorized email:", err);
+      alert("Failed to add authorized email. Please check your connection.");
     }
   };
 
@@ -301,14 +312,75 @@ export default function Team() {
       await updateDoc(doc(db, 'authorized_emails', editingAuthEmail.id), {
         name: editAuthName.trim() || editingAuthEmail.name,
         role: editAuthRole.trim() || 'Employee',
+        duty: editAuthDuty.trim() || undefined,
         color: editAuthColor || 'emerald',
         updatedAt: serverTimestamp(),
         updatedBy: currentName
       });
 
       setEditingAuthEmail(null);
+      setEditAuthDuty('');
     } catch (err) {
       console.error("Error updating authorized email:", err);
+    }
+  };
+
+  const handleSaveProfileEdits = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!hasAdminAccess(user?.email) || !selectedProfile) return;
+
+    try {
+      const emailClean = selectedProfile.email.toLowerCase().trim();
+      const existingAuth = authorizedEmails.find(a => a.email?.toLowerCase() === emailClean);
+
+      const allDuties = [...profileDuties];
+      if (newDutyItem.trim() && !allDuties.includes(newDutyItem.trim())) {
+        allDuties.push(newDutyItem.trim());
+      }
+      const cleanDuties = allDuties.map(d => d.trim()).filter(Boolean);
+
+      if (existingAuth) {
+        await updateDoc(doc(db, 'authorized_emails', existingAuth.id), {
+          role: profileRole.trim() || 'Employee',
+          duties: cleanDuties,
+          duty: cleanDuties.length > 0 ? cleanDuties[0] : '',
+          color: profileColor || 'emerald',
+          updatedAt: serverTimestamp(),
+          updatedBy: currentName
+        });
+      } else {
+        await addDoc(collection(db, 'authorized_emails'), {
+          email: emailClean,
+          name: selectedProfile.name,
+          role: profileRole.trim() || selectedProfile.role || 'Employee',
+          duties: cleanDuties,
+          duty: cleanDuties.length > 0 ? cleanDuties[0] : '',
+          color: profileColor || 'emerald',
+          addedBy: currentName,
+          addedByEmail: user?.email || '',
+          createdAt: serverTimestamp()
+        });
+      }
+
+      await addDoc(collection(db, 'activities'), {
+        text: `${currentName} updated role & duties for ${selectedProfile.name} (${profileRole.trim()}${cleanDuties.length > 0 ? ` - ${cleanDuties.join(', ')}` : ''})`,
+        type: 'general',
+        iconColor: 'text-nyghto-orange',
+        createdAt: Date.now()
+      });
+
+      setSelectedProfile((prev: any) => prev ? {
+        ...prev,
+        role: profileRole.trim() || prev.role,
+        duties: cleanDuties,
+        duty: cleanDuties[0] || undefined,
+        color: COLOR_PRESETS.find(c => c.id === profileColor)?.bg || prev.color
+      } : null);
+
+      setIsEditingProfile(false);
+    } catch (err) {
+      console.error("Error updating member profile:", err);
+      alert("Failed to update profile. Please try again.");
     }
   };
 
@@ -334,6 +406,7 @@ export default function Team() {
         email: cleanEmail,
         name: reviewingRequest.name?.trim() || cleanEmail.split('@')[0],
         role: reqRole.trim() || 'Employee',
+        duty: reqDuty.trim() || undefined,
         color: reqColor || 'emerald',
         addedBy: currentName,
         addedByEmail: user?.email || '',
@@ -349,11 +422,16 @@ export default function Team() {
       const colorObj = COLOR_PRESETS.find(c => c.id === reqColor) || COLOR_PRESETS[2];
 
       await addDoc(collection(db, 'activities'), {
-        text: `${currentName} approved access request for ${cleanEmail} (${reqRole.trim() || 'Employee'})`,
+        text: `${currentName} approved access request for ${cleanEmail} (${reqRole.trim() || 'Employee'}${reqDuty ? ` - ${reqDuty}` : ''})`,
         type: 'general',
         iconColor: colorObj.text,
         createdAt: serverTimestamp()
       });
+
+      setReviewingRequest(null);
+      setReqRole('Employee');
+      setReqDuty('');
+      setReqColor('emerald');
 
       setReviewingRequest(null);
     } catch (err) {
@@ -746,8 +824,15 @@ export default function Team() {
                             </div>
                           )}
                           <div>
-                            <div className="font-medium text-white group-hover:text-nyghto-orange transition-colors">{report.employeeName}</div>
-                            <div className="text-xs font-semibold text-nyghto-orange uppercase tracking-wide">{getUserRole(report.employeeEmail, report.role)}</div>
+                            <div className="text-xs font-bold text-white group-hover:text-nyghto-orange transition-colors">{report.employeeName || 'Team Member'}</div>
+                            <div className="flex items-center gap-1.5 flex-wrap">
+                              <span className="text-xs font-semibold text-nyghto-orange uppercase tracking-wide">{getUserRole(report.employeeEmail, report.role)}</span>
+                              {getUserDuty(report.employeeEmail) && (
+                                <span className="text-[10px] bg-purple-500/20 text-purple-300 border border-purple-500/30 px-1.5 py-0.5 rounded font-medium">
+                                  {getUserDuty(report.employeeEmail)}
+                                </span>
+                              )}
+                            </div>
                           </div>
                         </div>
                       </td>
@@ -872,8 +957,25 @@ export default function Team() {
                   </span>
                 </div>
 
-                <h3 className="text-xl font-bold text-white mb-0.5">{member.name}</h3>
-                <p className="text-sm text-nyghto-orange font-medium mb-4">{member.role}</p>
+                <h3 className="text-xl font-bold text-white mb-1">{member.name}</h3>
+                <div className="flex flex-col items-center gap-1.5 justify-center mb-4">
+                  <span className="text-sm text-nyghto-orange font-bold uppercase tracking-wider">{member.role}</span>
+                  {(() => {
+                    const dutyList = getUserDuties(member.email, member.duties);
+
+                    if (dutyList.length === 0) return null;
+                    return (
+                      <div className="flex flex-wrap items-center justify-center gap-1.5 mt-0.5">
+                        {dutyList.map((d, idx) => (
+                          <span key={idx} className="inline-flex items-center gap-1 text-[11px] bg-purple-500/20 text-purple-300 border border-purple-500/40 px-2.5 py-0.5 rounded-full font-medium shadow-sm">
+                            <span>🎯</span>
+                            <span>{d}</span>
+                          </span>
+                        ))}
+                      </div>
+                    );
+                  })()}
+                </div>
                 
                 <div className="flex gap-2 w-full mt-2">
                   <button 
@@ -1204,7 +1306,10 @@ export default function Team() {
                 { email: 'salurinshan9539@gmail.com', name: 'RINSHAN', role: 'CEO', avatar: '/rinshan.jpg' },
                 { email: 'amaldas.co@gmail.com', name: 'AMAL', role: 'CTO', avatar: '/amal.jpg' },
                 { email: 'shahalmuhammed404@gmail.com', name: 'SHAHAL', role: 'CPO', avatar: '/shahal.jpg' }
-              ].map(founder => (
+              ].map(founder => {
+                const liveFounder = teamMembers.find(m => m.email?.toLowerCase() === founder.email.toLowerCase()) || founder;
+                const founderDuties = liveFounder.duties || [];
+                return (
                 <div key={founder.email} className="p-4 bg-white/5 border border-white/10 rounded-xl flex items-center justify-between">
                   <div className="flex items-center gap-3">
                     {founder.avatar ? (
@@ -1221,12 +1326,18 @@ export default function Team() {
                   </div>
                   <div className="flex flex-col items-end gap-1">
                     <span className="text-xs font-bold text-nyghto-orange uppercase px-2 py-0.5 bg-nyghto-orange/10 border border-nyghto-orange/20 rounded-md">
-                      {founder.role}
+                      {liveFounder.role || founder.role}
                     </span>
+                    {founderDuties.map((d: string, idx: number) => (
+                      <span key={idx} className="text-[10px] bg-purple-500/20 text-purple-300 border border-purple-500/30 font-medium px-2 py-0.5 rounded-md">
+                        {d}
+                      </span>
+                    ))}
                     <span className="text-[10px] text-gray-500 font-medium">Permanent</span>
                   </div>
                 </div>
-              ))}
+              );
+            })}
             </div>
           </div>
 
@@ -1259,9 +1370,16 @@ export default function Team() {
                         </div>
                       </div>
                       <div className="flex items-center gap-3">
-                        <span className={`text-xs font-semibold px-2.5 py-1 rounded-lg border ${colorObj.bg} ${colorObj.text} ${colorObj.border}`}>
-                          {item.role || 'Employee'}
-                        </span>
+                        <div className="flex flex-col items-end gap-1">
+                          <span className={`text-xs font-semibold px-2.5 py-1 rounded-lg border ${colorObj.bg} ${colorObj.text} ${colorObj.border}`}>
+                            {item.role || 'Employee'}
+                          </span>
+                          {item.duty && (
+                            <span className="text-[10px] bg-purple-500/20 text-purple-300 border border-purple-500/30 font-medium px-2 py-0.5 rounded-md">
+                              {item.duty}
+                            </span>
+                          )}
+                        </div>
                         {hasAdminAccess(user?.email) && (
                           <div className="flex items-center gap-1">
                             <button
@@ -1269,6 +1387,7 @@ export default function Team() {
                                 setEditingAuthEmail(item);
                                 setEditAuthName(item.name || '');
                                 setEditAuthRole(item.role || 'Employee');
+                                setEditAuthDuty(item.duty || '');
                                 setEditAuthColor(item.color || 'emerald');
                               }}
                               title="Edit Member Role & Details"
@@ -1377,9 +1496,23 @@ export default function Team() {
                 <input
                   type="text"
                   required
-                  placeholder="Type any custom role (e.g. Lead Flutter Developer, AI Engineer, HR...)"
+                  placeholder="Type role (e.g. Employee, Developer, Designer...)"
                   value={newRole}
                   onChange={e => setNewRole(e.target.value)}
+                  className="w-full bg-nyghto-dark border border-white/10 rounded-lg py-2 px-3 text-white focus:outline-none focus:border-nyghto-orange text-sm"
+                />
+              </div>
+
+              {/* Specific Duty / Designation Field */}
+              <div>
+                <label className="block text-xs font-semibold text-gray-400 uppercase tracking-wider mb-1.5">
+                  Specific Duty / Responsibility (Optional)
+                </label>
+                <input
+                  type="text"
+                  placeholder="e.g. Social Media Controller, Frontend Lead, QA Tester..."
+                  value={newDuty}
+                  onChange={e => setNewDuty(e.target.value)}
                   className="w-full bg-nyghto-dark border border-white/10 rounded-lg py-2 px-3 text-white focus:outline-none focus:border-nyghto-orange text-sm"
                 />
               </div>
@@ -1541,9 +1674,23 @@ export default function Team() {
                 <input
                   type="text"
                   required
-                  placeholder="Type any custom role (e.g. Lead Flutter Developer, AI Engineer...)"
+                  placeholder="Type role (e.g. Employee, Developer...)"
                   value={editAuthRole}
                   onChange={e => setEditAuthRole(e.target.value)}
+                  className="w-full bg-nyghto-dark border border-white/10 rounded-lg py-2 px-3 text-white focus:outline-none focus:border-nyghto-orange text-sm"
+                />
+              </div>
+
+              {/* Specific Duty / Designation Field */}
+              <div>
+                <label className="block text-xs font-semibold text-gray-400 uppercase tracking-wider mb-1.5">
+                  Specific Duty / Responsibility (Optional)
+                </label>
+                <input
+                  type="text"
+                  placeholder="e.g. Social Media Controller, Frontend Lead..."
+                  value={editAuthDuty}
+                  onChange={e => setEditAuthDuty(e.target.value)}
                   className="w-full bg-nyghto-dark border border-white/10 rounded-lg py-2 px-3 text-white focus:outline-none focus:border-nyghto-orange text-sm"
                 />
               </div>
@@ -2004,55 +2151,284 @@ export default function Team() {
           </div>
         </div>
       )}
-      {/* View Profile Modal */}
-      {selectedProfile && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="glass-card w-full max-w-sm p-6 relative border border-white/20">
+      {/* View & Edit Profile Modal */}
+      {selectedProfile && (() => {
+        const liveMember = teamMembers.find(m => m.id === selectedProfile.id || m.email?.toLowerCase() === selectedProfile.email?.toLowerCase()) || selectedProfile;
+        const currentProfile = {
+          ...selectedProfile,
+          ...liveMember,
+          duties: selectedProfile.duties !== undefined ? selectedProfile.duties : liveMember.duties,
+          role: selectedProfile.role || liveMember.role,
+        };
+
+        return (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4 animate-in fade-in" onClick={() => { setSelectedProfile(null); setIsEditingProfile(false); }}>
+          <div className="glass-card w-full max-w-md p-6 relative border border-white/20 shadow-2xl animate-in zoom-in-95 max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
             <button 
-              onClick={() => setSelectedProfile(null)}
-              className="absolute right-4 top-4 text-gray-400 hover:text-white"
+              onClick={() => { setSelectedProfile(null); setIsEditingProfile(false); }}
+              className="absolute right-4 top-4 text-gray-400 hover:text-white p-1 rounded-lg hover:bg-white/10 transition-colors"
             >
               <X className="w-5 h-5" />
             </button>
-            <div className="flex flex-col items-center mb-6 mt-4">
-              {selectedProfile.avatarImage ? (
-                <img src={selectedProfile.avatarImage} alt={selectedProfile.name} className="w-24 h-24 rounded-full object-cover mb-4 shadow-lg ring-4 ring-white/10" />
-              ) : (
-                <div className={`w-24 h-24 rounded-full ${selectedProfile.color} flex items-center justify-center text-4xl font-bold text-white mb-4 shadow-lg ring-4 ring-white/10`}>
-                  {selectedProfile.initial}
-                </div>
-              )}
-              <h2 className="text-2xl font-bold text-white tracking-wide">{selectedProfile.name}</h2>
-              <p className="text-nyghto-orange font-medium mt-1">{selectedProfile.role}</p>
-            </div>
-            
-            <div className="space-y-3">
-              <div className="bg-white/5 p-3 rounded-lg border border-white/10 flex items-center justify-between">
-                <div className="text-xs text-gray-400">Email Address</div>
-                <div className="text-sm font-medium text-white">{selectedProfile.email}</div>
-              </div>
-              <div className="bg-white/5 p-3 rounded-lg border border-white/10 flex items-center justify-between">
-                <div className="text-xs text-gray-400">Phone Number</div>
-                <div className="text-sm font-medium text-white">{selectedProfile.phone}</div>
-              </div>
-              <div className="bg-white/5 p-3 rounded-lg border border-white/10 flex items-center justify-between">
-                <div className="text-xs text-gray-400">Live Status</div>
-                {(() => {
-                  const active = isMemberActive(selectedProfile.id);
-                  return (
-                    <div className="flex items-center gap-2">
-                      <span className={`w-2 h-2 rounded-full ${active ? 'bg-green-400 animate-pulse' : 'bg-gray-500'}`} />
-                      <span className={`text-sm font-semibold ${active ? 'text-green-400' : 'text-gray-400'}`}>
-                        {active ? 'Active Now' : 'Inactive'}
-                      </span>
+
+            {!isEditingProfile ? (
+              <>
+                <div className="flex flex-col items-center mb-6 mt-2">
+                  {currentProfile.avatarImage ? (
+                    <img src={currentProfile.avatarImage} alt={currentProfile.name} className="w-24 h-24 rounded-full object-cover mb-4 shadow-lg ring-4 ring-white/10" />
+                  ) : (
+                    <div className={`w-24 h-24 rounded-full ${currentProfile.color} flex items-center justify-center text-4xl font-bold text-white mb-4 shadow-lg ring-4 ring-white/10`}>
+                      {currentProfile.initial}
                     </div>
-                  );
-                })()}
-              </div>
-            </div>
+                  )}
+                  <h2 className="text-2xl font-bold text-white tracking-wide">{currentProfile.name}</h2>
+                  <div className="flex items-center gap-2 mt-2 flex-wrap justify-center max-w-full">
+                    <span className="text-sm text-nyghto-orange font-bold px-2.5 py-0.5 bg-nyghto-orange/10 border border-nyghto-orange/20 rounded-md uppercase">
+                      {currentProfile.role}
+                    </span>
+                    {(() => {
+                      const dutyList = getUserDuties(currentProfile.email, currentProfile.duties);
+
+                      return dutyList.map((d: string, idx: number) => (
+                        <span key={idx} className="text-xs bg-purple-500/20 text-purple-300 border border-purple-500/30 font-semibold px-2.5 py-0.5 rounded-md flex items-center gap-1">
+                          🎯 {d}
+                        </span>
+                      ));
+                    })()}
+                  </div>
+                </div>
+                
+                <div className="space-y-3">
+                  <div className="bg-white/5 p-3 rounded-lg border border-white/10 flex items-center justify-between">
+                    <div className="text-xs text-gray-400">Email Address</div>
+                    <div className="text-sm font-medium text-white">{currentProfile.email}</div>
+                  </div>
+                  <div className="bg-white/5 p-3 rounded-lg border border-white/10 flex items-center justify-between">
+                    <div className="text-xs text-gray-400">Phone Number</div>
+                    <div className="text-sm font-medium text-white">{currentProfile.phone}</div>
+                  </div>
+                  <div className="bg-white/5 p-3 rounded-lg border border-white/10 flex items-center justify-between">
+                    <div className="text-xs text-gray-400">Live Status</div>
+                    {(() => {
+                      const active = isMemberActive(currentProfile.id);
+                      return (
+                        <div className="flex items-center gap-2">
+                          <span className={`w-2 h-2 rounded-full ${active ? 'bg-green-400 animate-pulse' : 'bg-gray-500'}`} />
+                          <span className={`text-sm font-semibold ${active ? 'text-green-400' : 'text-gray-400'}`}>
+                            {active ? 'Active Now' : 'Inactive'}
+                          </span>
+                        </div>
+                      );
+                    })()}
+                  </div>
+                </div>
+
+                {hasAdminAccess(user?.email) && (
+                  <div className="mt-6 pt-4 border-t border-white/10 flex justify-end">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setIsEditingProfile(true);
+                        setProfileRole(currentProfile.role || 'Employee');
+                        const initialDuties = getUserDuties(currentProfile.email, currentProfile.duties);
+                        setProfileDuties([...initialDuties]);
+                        setNewDutyItem('');
+                        setProfileColor(currentProfile.customColorKey || 'emerald');
+                      }}
+                      className="w-full btn-primary text-sm flex items-center justify-center gap-2 py-2.5"
+                    >
+                      <Pencil className="w-4 h-4" />
+                      Edit Member Role & Duties (Admin Only)
+                    </button>
+                  </div>
+                )}
+              </>
+            ) : (
+              /* Admin Edit Profile Form */
+              <form onSubmit={handleSaveProfileEdits} className="space-y-4 mt-2">
+                <div className="flex items-center gap-2 pb-3 border-b border-white/10 mb-2">
+                  <Pencil className="w-5 h-5 text-nyghto-orange" />
+                  <div>
+                    <h3 className="font-bold text-white text-base">Edit Profile: {currentProfile.name}</h3>
+                    <p className="text-xs text-gray-400">{currentProfile.email}</p>
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-gray-400 uppercase tracking-wider mb-1.5">
+                    Executive Role (CEO, CTO, CPO, Developer, etc.) *
+                  </label>
+                  
+                  {/* Quick Preset Pills including CEO, CTO, CPO */}
+                  <div className="flex flex-wrap gap-1.5 mb-2.5">
+                    {['CEO', 'CTO', 'CPO', 'Employee', 'Developer', 'Designer', 'Marketing', 'Manager'].map(r => (
+                      <button
+                        key={r}
+                        type="button"
+                        onClick={() => setProfileRole(r)}
+                        className={`px-2.5 py-1 text-xs rounded-lg border transition-all ${
+                          profileRole.toUpperCase() === r.toUpperCase()
+                            ? 'bg-nyghto-orange text-white border-nyghto-orange font-bold shadow-[0_0_8px_rgba(255,107,0,0.3)]'
+                            : 'bg-white/5 text-gray-300 border-white/10 hover:border-white/20'
+                        }`}
+                      >
+                        {r}
+                      </button>
+                    ))}
+                  </div>
+
+                  <input
+                    type="text"
+                    required
+                    placeholder="Type Role (e.g. CEO, CTO, CPO, Product Manager...)"
+                    value={profileRole}
+                    onChange={e => setProfileRole(e.target.value)}
+                    className="w-full bg-nyghto-dark border border-white/10 rounded-lg py-2 px-3 text-white focus:outline-none focus:border-nyghto-orange text-sm"
+                  />
+                </div>
+
+                {/* Multiple Duties Manager (Add / Delete / Change) */}
+                <div>
+                  <label className="block text-xs font-semibold text-gray-400 uppercase tracking-wider mb-1.5">
+                    Assigned Duties & Responsibilities ({profileDuties.length})
+                  </label>
+                  
+                  {/* Current Active Duties Pills with Delete (X) button */}
+                  <div className="flex flex-wrap gap-2 mb-3 min-h-[32px] p-2 bg-white/5 border border-white/10 rounded-lg">
+                    {profileDuties.map((duty, idx) => (
+                      <span key={idx} className="inline-flex items-center gap-1.5 text-xs bg-purple-500/20 text-purple-300 border border-purple-500/40 px-2.5 py-1 rounded-full font-medium shadow-sm">
+                        <span>🎯 {duty}</span>
+                        <button
+                          type="button"
+                          onClick={() => setProfileDuties(prev => prev.filter((_, i) => i !== idx))}
+                          className="text-purple-300 hover:text-red-400 p-0.5 rounded-full hover:bg-white/10 transition-colors"
+                          title="Delete duty"
+                        >
+                          <X className="w-3.5 h-3.5" />
+                        </button>
+                      </span>
+                    ))}
+                    {profileDuties.length === 0 && (
+                      <span className="text-xs text-gray-500 italic py-0.5">No duties assigned yet. Add one below.</span>
+                    )}
+                  </div>
+
+                  {/* Add New Duty Input & Button */}
+                  <div className="flex gap-2">
+                    <input
+                      type="text"
+                      placeholder="Add duty (e.g. Ads Running, Financial Control...)"
+                      value={newDutyItem}
+                      onChange={e => setNewDutyItem(e.target.value)}
+                      onKeyDown={e => {
+                        if (e.key === 'Enter') {
+                          e.preventDefault();
+                          const val = newDutyItem.trim();
+                          if (val && !profileDuties.includes(val)) {
+                            setProfileDuties(prev => [...prev, val]);
+                            setNewDutyItem('');
+                          }
+                        }
+                      }}
+                      className="flex-1 bg-nyghto-dark border border-white/10 rounded-lg py-2 px-3 text-white focus:outline-none focus:border-nyghto-orange text-sm"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const val = newDutyItem.trim();
+                        if (val && !profileDuties.includes(val)) {
+                          setProfileDuties(prev => [...prev, val]);
+                          setNewDutyItem('');
+                        }
+                      }}
+                      className="px-3.5 py-2 bg-purple-500/20 hover:bg-purple-500/30 text-purple-300 border border-purple-500/40 rounded-lg text-xs font-bold transition-all flex items-center gap-1 shrink-0"
+                    >
+                      <Plus className="w-4 h-4" /> Add Duty
+                    </button>
+                  </div>
+
+                  {/* Quick Preset Duty Pills */}
+                  <div className="mt-2.5">
+                    <span className="text-[10px] text-gray-500 uppercase tracking-wider font-semibold block mb-1">Quick Add Presets:</span>
+                    <div className="flex flex-wrap gap-1.5">
+                      {[
+                        'Social Media Controller',
+                        'Ads Running',
+                        'Financial Control',
+                        'Project Lead',
+                        'UI/UX Design',
+                        'QA & Testing',
+                        'Client Management'
+                      ].map(preset => (
+                        <button
+                          key={preset}
+                          type="button"
+                          onClick={() => {
+                            if (!profileDuties.includes(preset)) {
+                              setProfileDuties(prev => [...prev, preset]);
+                            }
+                          }}
+                          className={`text-[11px] px-2 py-0.5 rounded-md border transition-all ${
+                            profileDuties.includes(preset)
+                              ? 'bg-purple-500/30 text-purple-200 border-purple-500/60 font-bold'
+                              : 'bg-white/5 text-gray-400 border-white/10 hover:border-white/20'
+                          }`}
+                        >
+                          + {preset}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">
+                    Badge & Avatar Color
+                  </label>
+                  <div className="grid grid-cols-4 gap-2">
+                    {COLOR_PRESETS.map(c => {
+                      const isSelected = profileColor === c.id;
+                      return (
+                        <button
+                          key={c.id}
+                          type="button"
+                          onClick={() => setProfileColor(c.id)}
+                          className={`p-2 rounded-lg border text-xs font-medium flex items-center justify-center gap-1.5 transition-all ${
+                            isSelected
+                              ? `${c.bg} ${c.text} ${c.border} ring-2 ring-white/20 font-bold`
+                              : 'bg-white/5 border-white/10 text-gray-400 hover:border-white/20'
+                          }`}
+                        >
+                          <span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: c.dot }} />
+                          {c.name}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                <div className="pt-4 border-t border-white/10 flex justify-end gap-3">
+                  <button
+                    type="button"
+                    onClick={() => setIsEditingProfile(false)}
+                    className="px-4 py-2 rounded-lg text-sm font-medium hover:bg-white/5 transition-colors"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    className="btn-primary text-sm flex items-center gap-1.5"
+                  >
+                    <Check className="w-4 h-4" />
+                    Save Changes
+                  </button>
+                </div>
+              </form>
+            )}
           </div>
         </div>
-      )}
+        );
+      })()}
 
       {/* Review Access Request Modal */}
       {reviewingRequest && (
@@ -2122,6 +2498,18 @@ export default function Team() {
                     </button>
                   ))}
                 </div>
+              </div>
+
+              {/* Duty Input */}
+              <div>
+                <label className="block text-xs font-semibold text-gray-400 mb-1.5">Specific Duty / Responsibility (Optional)</label>
+                <input 
+                  type="text" 
+                  value={reqDuty}
+                  onChange={(e) => setReqDuty(e.target.value)}
+                  placeholder="E.g. Social Media Controller, QA Lead..."
+                  className="w-full bg-white/5 border border-white/10 rounded-lg py-2.5 px-3 text-sm text-white focus:outline-none focus:border-nyghto-orange"
+                />
               </div>
 
               {/* Color Picker */}

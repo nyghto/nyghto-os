@@ -51,3 +51,22 @@ export const getUserAvatar = (email: string | null | undefined): string | null =
   return null;
 };
 
+export const getUserDuty = (email: string | null | undefined, fallbackDuty?: string): string | undefined => {
+  if (fallbackDuty) return fallbackDuty;
+  if (!email) return undefined;
+  const lower = email.toLowerCase().trim();
+  if (lower === 'salurinshan9539@gmail.com') return 'Nyra OS Operator';
+  if (lower === 'amaldas.co@gmail.com') return 'Social Media Controller';
+  return undefined;
+};
+
+export const getUserDuties = (email: string | null | undefined, fallbackDuties?: string[]): string[] => {
+  if (fallbackDuties && fallbackDuties.length > 0) return fallbackDuties;
+  if (!email) return [];
+  const lower = email.toLowerCase().trim();
+  if (lower === 'salurinshan9539@gmail.com') return ['Nyra OS Operator'];
+  if (lower === 'amaldas.co@gmail.com') return ['Social Media Controller'];
+  return [];
+};
+
+
