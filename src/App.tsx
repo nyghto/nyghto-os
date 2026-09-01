@@ -1,13 +1,13 @@
 import React, { useState, useEffect } from 'react';
 import { BrowserRouter, Routes, Route, Link, useLocation, Navigate } from 'react-router-dom';
-import { LayoutDashboard, FolderKanban, CheckSquare, Users, BarChart3, Settings, Bell, Search, LogOut, Sun, Moon, X, Palette, PenTool } from 'lucide-react';
+import { LayoutDashboard, FolderKanban, CheckSquare, Users, BarChart3, Settings, Bell, Search, LogOut, Sun, Moon, X, Palette, PenTool, Key, Lock, CheckCircle2, ShieldCheck, Trash2 } from 'lucide-react';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { ThemeProvider, useTheme, THEME_COLORS } from './contexts/ThemeContext';
 import type { ThemeColorName } from './contexts/ThemeContext';
 import { TeamProvider } from './contexts/TeamContext';
 import { auth, db } from './lib/firebase';
-import { collection, query, orderBy, limit, onSnapshot, doc, deleteDoc } from 'firebase/firestore';
-import { hasAdminAccess, getUserRole, getUserName, getUserAvatar } from './utils/permissions';
+import { collection, query, orderBy, limit, onSnapshot, doc, deleteDoc, setDoc, getDoc, serverTimestamp } from 'firebase/firestore';
+import { hasAdminAccess, isSuperAdmin, getUserRole, getUserName, getUserAvatar } from './utils/permissions';
 import type { Activity } from './types';
 import Dashboard from './pages/Dashboard';
 import Projects from './pages/Projects';
@@ -26,7 +26,19 @@ function Sidebar() {
   const role = getUserRole(user?.email, userData?.role);
   const name = getUserName(user?.email, userData?.name);
   const avatar = getUserAvatar(user?.email);
+
+  // Password Change State
+  const [isPasswordModalOpen, setIsPasswordModalOpen] = useState(false);
+  const [passwordTargetTab, setPasswordTargetTab] = useState<'login' | 'delete'>('login');
+  const [oldPasswordInput, setOldPasswordInput] = useState('');
+  const [newPasswordInput, setNewPasswordInput] = useState('');
+  const [confirmPasswordInput, setConfirmPasswordInput] = useState('');
+  const [passError, setPassError] = useState('');
+  const [passSuccess, setPassSuccess] = useState('');
+  const [isSavingPass, setIsSavingPass] = useState(false);
   
+  const isSuper = isSuperAdmin(user?.email);
+
   const navItems = [
     { icon: LayoutDashboard, label: 'Dashboard', path: '/' },
     { icon: FolderKanban, label: 'Projects', path: '/projects' },
@@ -37,68 +49,365 @@ function Sidebar() {
     { icon: PenTool, label: 'Black Board', path: '/whiteboard' },
   ];
 
+  const handleUpdateUserPassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!user?.email) return;
+    setPassError('');
+    setPassSuccess('');
+
+    const emailClean = user.email.toLowerCase().trim();
+    const oldClean = oldPasswordInput.trim();
+    const newClean = newPasswordInput.trim();
+    const confirmClean = confirmPasswordInput.trim();
+
+    // Default password fallbacks
+    const defaultPasswords: Record<string, string> = {
+      'amaldas.co@gmail.com': 'amal123',
+      'salurinshan9539@gmail.com': 'rinshan123',
+      'shahalmuhammed404@gmail.com': 'shahal123',
+      'team.nyghto@gmail.com': '1111'
+    };
+
+    setIsSavingPass(true);
+    try {
+      if (isSuper && passwordTargetTab === 'delete') {
+        // Handle Admin Delete Password Change
+        const adminDoc = await getDoc(doc(db, 'settings', 'admin_config'));
+        let expectedOld = '9999';
+        if (adminDoc.exists() && adminDoc.data().deletePin) {
+          expectedOld = adminDoc.data().deletePin.toString().trim();
+        }
+
+        if (oldClean !== expectedOld) {
+          setPassError('Old Delete Password is incorrect! Please enter current delete password.');
+          setIsSavingPass(false);
+          return;
+        }
+
+        if (newClean.length < 4) {
+          setPassError('New Delete Password must be at least 4 characters/digits.');
+          setIsSavingPass(false);
+          return;
+        }
+
+        if (newClean !== confirmClean) {
+          setPassError('New password and confirmation password do not match.');
+          setIsSavingPass(false);
+          return;
+        }
+
+        await setDoc(doc(db, 'settings', 'admin_config'), {
+          deletePin: newClean,
+          deletePinUpdatedAt: serverTimestamp(),
+          updatedByName: name,
+          updatedByEmail: emailClean
+        }, { merge: true });
+
+        setPassSuccess('Admin Delete Password updated successfully!');
+      } else {
+        // Handle User / Admin Login Password Change
+        const passDocRef = doc(db, 'user_passwords', emailClean);
+        const passSnap = await getDoc(passDocRef);
+        
+        let expectedOld = defaultPasswords[emailClean] || '1111';
+        if (passSnap.exists() && passSnap.data().password) {
+          expectedOld = passSnap.data().password.toString().trim();
+        } else if (emailClean === 'team.nyghto@gmail.com') {
+          const adminDoc = await getDoc(doc(db, 'settings', 'admin_config'));
+          if (adminDoc.exists() && adminDoc.data().adminPin) {
+            expectedOld = adminDoc.data().adminPin.toString().trim();
+          }
+        }
+
+        if (oldClean !== expectedOld) {
+          setPassError('Old password is incorrect! Please enter your current active password.');
+          setIsSavingPass(false);
+          return;
+        }
+
+        if (newClean.length < 4) {
+          setPassError('New password must be at least 4 characters.');
+          setIsSavingPass(false);
+          return;
+        }
+
+        if (newClean !== confirmClean) {
+          setPassError('New password and confirmation password do not match.');
+          setIsSavingPass(false);
+          return;
+        }
+
+        // Save new password to user_passwords collection
+        await setDoc(passDocRef, {
+          email: emailClean,
+          password: newClean,
+          updatedAt: serverTimestamp(),
+          updatedByName: name
+        }, { merge: true });
+
+        // If Super Admin, also update settings/admin_config adminPin
+        if (emailClean === 'team.nyghto@gmail.com') {
+          await setDoc(doc(db, 'settings', 'admin_config'), {
+            adminPin: newClean,
+            updatedAt: serverTimestamp()
+          }, { merge: true });
+        }
+
+        setPassSuccess('Login password updated successfully!');
+      }
+
+      setOldPasswordInput('');
+      setNewPasswordInput('');
+      setConfirmPasswordInput('');
+      setTimeout(() => {
+        setIsPasswordModalOpen(false);
+        setPassSuccess('');
+      }, 2000);
+    } catch (err: any) {
+      console.error("Error updating password:", err);
+      setPassError(err.message || 'Failed to update password');
+    } finally {
+      setIsSavingPass(false);
+    }
+  };
+
   return (
-    <div className="w-64 h-screen glass-card rounded-none border-y-0 border-l-0 flex flex-col p-4 fixed left-0 top-0 z-50">
-      <div className="flex items-center gap-3 mb-10 px-2 mt-4">
-        <div className="w-8 h-8 rounded bg-gradient-to-br from-nyghto-orange to-nyghto-yellow flex items-center justify-center font-bold text-white shadow-[0_0_15px_rgba(255,107,0,0.5)]">
-          N
+    <>
+      <div className="w-64 h-screen glass-card rounded-none border-y-0 border-l-0 flex flex-col p-4 fixed left-0 top-0 z-50">
+        <div className="flex items-center gap-3 mb-10 px-2 mt-4">
+          <div className="w-8 h-8 rounded bg-gradient-to-br from-nyghto-orange to-nyghto-yellow flex items-center justify-center font-bold text-white shadow-[0_0_15px_rgba(255,107,0,0.5)]">
+            N
+          </div>
+          <span className="text-xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-theme-text to-theme-muted">
+            Nyghto OS
+          </span>
         </div>
-        <span className="text-xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-theme-text to-theme-muted">
-          Nyghto OS
-        </span>
-      </div>
-      
-      <nav className="flex flex-col gap-2 flex-1">
-        {navItems.map((item) => {
-          const isActive = location.pathname === item.path;
-          return (
-            <Link
-              key={item.path}
-              to={item.path}
-              className={`flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-300 group ${
-                isActive 
-                  ? 'bg-gradient-to-r from-nyghto-orange/20 to-transparent text-nyghto-orange border-l-[3px] border-nyghto-orange shadow-[inset_4px_0_10px_rgba(255,107,0,0.1)]' 
-                  : 'text-theme-muted hover:text-theme-text hover:bg-theme-border border-l-[3px] border-transparent hover:translate-x-1'
-              }`}
-            >
-              <item.icon className={`w-5 h-5 transition-all duration-300 ${isActive ? 'text-nyghto-orange drop-shadow-[0_0_8px_rgba(255,107,0,0.5)]' : 'group-hover:text-nyghto-orange group-hover:scale-110'}`} />
-              <span className="font-medium tracking-wide">{item.label}</span>
-            </Link>
-          );
-        })}
-      </nav>
-      
-      <div className="mt-auto pt-4 flex flex-col gap-2">
-        <div className="border-t border-theme-border pt-4">
-          <div className="flex items-center justify-between px-2 hover:bg-theme-border p-2 rounded-lg transition-all duration-300 group">
-            <div className="flex items-center gap-3 overflow-hidden">
-              {avatar ? (
-                <img
-                  src={avatar}
-                  alt={name}
-                  className="w-9 h-9 rounded-full object-cover border border-nyghto-orange/40 shadow-sm shrink-0"
-                />
-              ) : (
-                <div className="w-9 h-9 rounded-full bg-theme-bg flex items-center justify-center text-nyghto-orange border border-theme-border uppercase shadow-sm font-bold shrink-0">
-                  {name?.charAt(0) || 'U'}
+        
+        <nav className="flex flex-col gap-2 flex-1">
+          {navItems.map((item) => {
+            const isActive = location.pathname === item.path;
+            return (
+              <Link
+                key={item.path}
+                to={item.path}
+                className={`flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-300 group ${
+                  isActive 
+                    ? 'bg-gradient-to-r from-nyghto-orange/20 to-transparent text-nyghto-orange border-l-[3px] border-nyghto-orange shadow-[inset_4px_0_10px_rgba(255,107,0,0.1)]' 
+                    : 'text-theme-muted hover:text-theme-text hover:bg-theme-border border-l-[3px] border-transparent hover:translate-x-1'
+                }`}
+              >
+                <item.icon className={`w-5 h-5 transition-all duration-300 ${isActive ? 'text-nyghto-orange drop-shadow-[0_0_8px_rgba(255,107,0,0.5)]' : 'group-hover:text-nyghto-orange group-hover:scale-110'}`} />
+                <span className="font-medium tracking-wide">{item.label}</span>
+              </Link>
+            );
+          })}
+        </nav>
+        
+        <div className="mt-auto pt-4 flex flex-col gap-2">
+          <div className="border-t border-theme-border pt-4">
+            <div className="flex items-center justify-between px-2 hover:bg-theme-border p-2 rounded-lg transition-all duration-300 group">
+              <div className="flex items-center gap-3 overflow-hidden">
+                {avatar ? (
+                  <img
+                    src={avatar}
+                    alt={name}
+                    className="w-9 h-9 rounded-full object-cover border border-nyghto-orange/40 shadow-sm shrink-0"
+                  />
+                ) : (
+                  <div className="w-9 h-9 rounded-full bg-theme-bg flex items-center justify-center text-nyghto-orange border border-theme-border uppercase shadow-sm font-bold shrink-0">
+                    {name?.charAt(0) || 'U'}
+                  </div>
+                )}
+                <div className="overflow-hidden">
+                  <div className="text-sm font-medium text-theme-text truncate">{name}</div>
+                  <div className="text-xs font-semibold text-nyghto-orange uppercase tracking-wide">{role}</div>
                 </div>
-              )}
-              <div className="overflow-hidden">
-                <div className="text-sm font-medium text-theme-text truncate">{name}</div>
-                <div className="text-xs font-semibold text-nyghto-orange uppercase tracking-wide">{role}</div>
+              </div>
+              
+              <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                <button 
+                  onClick={() => {
+                    setIsPasswordModalOpen(true);
+                    setOldPasswordInput('');
+                    setNewPasswordInput('');
+                    setConfirmPasswordInput('');
+                    setPassError('');
+                    setPassSuccess('');
+                  }}
+                  className="text-theme-muted hover:text-nyghto-orange p-1 transition-colors"
+                  title="Change Password"
+                >
+                  <Key className="w-4 h-4" />
+                </button>
+                <button 
+                  onClick={() => logout()}
+                  className="text-theme-muted hover:text-red-400 p-1 transition-colors"
+                  title="Sign Out"
+                >
+                  <LogOut className="w-4 h-4" />
+                </button>
               </div>
             </div>
-            <button 
-              onClick={() => logout()}
-              className="text-theme-muted hover:text-red-400 opacity-0 group-hover:opacity-100 transition-opacity p-1"
-              title="Sign Out"
-            >
-              <LogOut className="w-4 h-4" />
-            </button>
           </div>
         </div>
       </div>
-    </div>
+
+      {/* Employee Change Password Modal */}
+      {isPasswordModalOpen && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-md z-[100] flex items-center justify-center p-4 animate-in fade-in" onClick={() => setIsPasswordModalOpen(false)}>
+          <div className="glass-card w-full max-w-md p-6 relative border border-nyghto-orange/40 shadow-[0_0_40px_rgba(255,107,0,0.25)] rounded-2xl animate-in zoom-in-95" onClick={e => e.stopPropagation()}>
+            <button
+              type="button"
+              onClick={() => setIsPasswordModalOpen(false)}
+              className="absolute right-4 top-4 text-gray-400 hover:text-white p-1 rounded-lg hover:bg-white/10 transition-colors"
+            >
+              <X className="w-5 h-5" />
+            </button>
+
+            <div className="flex items-center gap-3 mb-4">
+              <div className={`w-11 h-11 rounded-xl flex items-center justify-center shadow-lg ${passwordTargetTab === 'login' ? 'bg-nyghto-orange/20 border border-nyghto-orange/30 text-nyghto-orange' : 'bg-red-500/20 border border-red-500/30 text-red-400'}`}>
+                {passwordTargetTab === 'login' ? <Lock className="w-6 h-6" /> : <Trash2 className="w-6 h-6" />}
+              </div>
+              <div>
+                <h3 className="text-lg font-bold text-white">
+                  {isSuper ? (passwordTargetTab === 'login' ? 'Admin Login Password' : 'Admin Delete Action Password') : 'Change My Password'}
+                </h3>
+                <p className="text-xs text-gray-400">Account: <span className="text-nyghto-orange font-mono">{user?.email}</span></p>
+              </div>
+            </div>
+
+            {/* If Super Admin, show tabs to switch between Login Password & Delete Password */}
+            {isSuper && (
+              <div className="flex bg-white/5 p-1 rounded-xl border border-white/10 mb-4">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setPasswordTargetTab('login');
+                    setOldPasswordInput('');
+                    setNewPasswordInput('');
+                    setConfirmPasswordInput('');
+                    setPassError('');
+                    setPassSuccess('');
+                  }}
+                  className={`flex-1 py-1.5 rounded-lg text-xs font-semibold flex items-center justify-center gap-1.5 transition-all ${
+                    passwordTargetTab === 'login' 
+                      ? 'bg-nyghto-orange text-white shadow-md' 
+                      : 'text-gray-400 hover:text-white'
+                  }`}
+                >
+                  <Lock className="w-3.5 h-3.5" />
+                  <span>Login Password</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setPasswordTargetTab('delete');
+                    setOldPasswordInput('');
+                    setNewPasswordInput('');
+                    setConfirmPasswordInput('');
+                    setPassError('');
+                    setPassSuccess('');
+                  }}
+                  className={`flex-1 py-1.5 rounded-lg text-xs font-semibold flex items-center justify-center gap-1.5 transition-all ${
+                    passwordTargetTab === 'delete' 
+                      ? 'bg-red-600 text-white shadow-md' 
+                      : 'text-gray-400 hover:text-white'
+                  }`}
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                  <span>Delete Password</span>
+                </button>
+              </div>
+            )}
+
+            {passError && (
+              <div className="mb-4 p-3 rounded-xl bg-red-500/10 border border-red-500/20 text-red-400 text-xs font-medium leading-relaxed">
+                {passError}
+              </div>
+            )}
+
+            {passSuccess && (
+              <div className="mb-4 p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-xs font-medium leading-relaxed flex items-center gap-2">
+                <CheckCircle2 className="w-4 h-4 shrink-0" />
+                <span>{passSuccess}</span>
+              </div>
+            )}
+
+            <form onSubmit={handleUpdateUserPassword} className="space-y-4">
+              <div>
+                <label className="block text-xs font-semibold text-gray-300 uppercase tracking-wider mb-1.5">
+                  Current (Old) Password *
+                </label>
+                <input
+                  type="password"
+                  required
+                  autoFocus
+                  value={oldPasswordInput}
+                  onChange={(e) => {
+                    setOldPasswordInput(e.target.value);
+                    setPassError('');
+                  }}
+                  placeholder="Enter current old password"
+                  className="w-full bg-nyghto-dark/90 border border-white/10 rounded-xl p-3 text-sm text-white focus:outline-none focus:border-nyghto-orange font-mono"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-gray-300 uppercase tracking-wider mb-1.5">
+                  New Password *
+                </label>
+                <input
+                  type="password"
+                  required
+                  value={newPasswordInput}
+                  onChange={(e) => {
+                    setNewPasswordInput(e.target.value);
+                    setPassError('');
+                  }}
+                  placeholder="Enter new password (min 4 characters)"
+                  className="w-full bg-nyghto-dark/90 border border-white/10 rounded-xl p-3 text-sm text-white focus:outline-none focus:border-nyghto-orange font-mono"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-gray-300 uppercase tracking-wider mb-1.5">
+                  Confirm New Password *
+                </label>
+                <input
+                  type="password"
+                  required
+                  value={confirmPasswordInput}
+                  onChange={(e) => {
+                    setConfirmPasswordInput(e.target.value);
+                    setPassError('');
+                  }}
+                  placeholder="Re-enter new password to confirm"
+                  className="w-full bg-nyghto-dark/90 border border-white/10 rounded-xl p-3 text-sm text-white focus:outline-none focus:border-nyghto-orange font-mono"
+                />
+              </div>
+
+              <div className="flex gap-3 pt-3 border-t border-white/10">
+                <button
+                  type="button"
+                  onClick={() => setIsPasswordModalOpen(false)}
+                  className="flex-1 py-2.5 bg-white/5 hover:bg-white/10 text-gray-300 rounded-xl text-xs font-semibold transition-colors border border-white/10"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={isSavingPass || !oldPasswordInput || !newPasswordInput || !confirmPasswordInput}
+                  className="flex-1 btn-primary py-2.5 text-xs font-bold rounded-xl shadow-lg disabled:opacity-50 flex items-center justify-center gap-1.5"
+                >
+                  <ShieldCheck className="w-4 h-4" />
+                  <span>{isSavingPass ? 'Updating...' : 'Update Password'}</span>
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+    </>
   );
 }
 

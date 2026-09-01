@@ -1,10 +1,11 @@
 import React, { useState, useEffect } from 'react';
-import { signInWithPopup, GoogleAuthProvider } from 'firebase/auth';
+import { signInWithPopup, GoogleAuthProvider, signOut } from 'firebase/auth';
 import { auth, db } from '../lib/firebase';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
-import { collection, query, where, onSnapshot } from 'firebase/firestore';
-import { Clock, Send, CheckCircle2, XCircle, ArrowRight, UserCheck, AlertTriangle } from 'lucide-react';
+import { collection, query, where, onSnapshot, doc } from 'firebase/firestore';
+import { Clock, Send, CheckCircle2, XCircle, ArrowRight, UserCheck, AlertTriangle, ShieldCheck, Lock, X } from 'lucide-react';
+import { isSuperAdmin, hasAdminAccess } from '../utils/permissions';
 
 export default function Login() {
   const { unauthorizedError, clearUnauthorizedError, pendingUser, clearPendingUser, requestAccess } = useAuth();
@@ -12,7 +13,45 @@ export default function Login() {
   const [loading, setLoading] = useState(false);
   const [requestStatus, setRequestStatus] = useState<'idle' | 'pending' | 'approved' | 'rejected'>('idle');
   const [sendingRequest, setSendingRequest] = useState(false);
+
+  // Admin PIN Protection State (PIN: 1111)
+  const [showAdminPasswordModal, setShowAdminPasswordModal] = useState(false);
+  const [adminPasswordInput, setAdminPasswordInput] = useState('');
+  const [adminPasswordError, setAdminPasswordError] = useState('');
+  const [pendingAdminUser, setPendingAdminUser] = useState<any>(null);
+
   const navigate = useNavigate();
+
+  const [adminPin, setAdminPin] = useState('1111');
+  const [customPasswords, setCustomPasswords] = useState<Record<string, string>>({});
+
+  // Load live Admin PIN & custom user passwords from Firestore
+  useEffect(() => {
+    const unsubAdmin = onSnapshot(doc(db, 'settings', 'admin_config'), (snap) => {
+      if (snap.exists()) {
+        const data = snap.data();
+        if (data.adminPin) {
+          setAdminPin(data.adminPin.toString().trim());
+        }
+      }
+    });
+
+    const unsubUserPasswords = onSnapshot(collection(db, 'user_passwords'), (snapshot) => {
+      const passMap: Record<string, string> = {};
+      snapshot.docs.forEach((docSnap) => {
+        const data = docSnap.data();
+        if (data.email && data.password) {
+          passMap[data.email.toLowerCase().trim()] = data.password.toString().trim();
+        }
+      });
+      setCustomPasswords(passMap);
+    });
+
+    return () => {
+      unsubAdmin();
+      unsubUserPasswords();
+    };
+  }, []);
 
   // Listen to access request status if pendingUser is set
   useEffect(() => {
@@ -40,20 +79,68 @@ export default function Login() {
     return () => unsubscribe();
   }, [pendingUser]);
 
+  // Default & Dynamic Passwords Map
+  const DEFAULT_PASSWORDS: Record<string, string> = {
+    'amaldas.co@gmail.com': 'amal123',
+    'salurinshan9539@gmail.com': 'rinshan123',
+    'shahalmuhammed404@gmail.com': 'shahal123',
+    'team.nyghto@gmail.com': '1111'
+  };
+
   const handleGoogleSignIn = async () => {
     setError('');
+    setAdminPasswordError('');
     clearUnauthorizedError();
     setLoading(true);
 
     try {
       const provider = new GoogleAuthProvider();
-      await signInWithPopup(auth, provider);
-      navigate('/');
+      const result = await signInWithPopup(auth, provider);
+      const userEmail = result.user?.email?.toLowerCase().trim() || '';
+
+      // All team users (or admins) are prompted for their security password
+      setPendingAdminUser(result.user);
+      setShowAdminPasswordModal(true);
+      setAdminPasswordInput('');
     } catch (err: any) {
       setError(err.message || 'Authentication failed');
+      setLoading(false);
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleVerifyAdminPassword = (e: React.FormEvent) => {
+    e.preventDefault();
+    const cleanInput = adminPasswordInput.trim();
+    const email = pendingAdminUser?.email?.toLowerCase().trim() || '';
+
+    // Determine expected password for this specific user:
+    let expectedPassword = customPasswords[email] || DEFAULT_PASSWORDS[email];
+    if (email === 'team.nyghto@gmail.com') {
+      expectedPassword = customPasswords[email] || adminPin || '1111';
+    }
+
+    // If no specific password configured, default to '1111'
+    if (!expectedPassword) {
+      expectedPassword = customPasswords[email] || adminPin || '1111';
+    }
+
+    if (cleanInput === expectedPassword) {
+      setShowAdminPasswordModal(false);
+      setPendingAdminUser(null);
+      navigate('/');
+    } else {
+      setAdminPasswordError(`Incorrect password for ${email}! Please enter your valid password.`);
+    }
+  };
+
+  const handleCancelAdminLogin = async () => {
+    setShowAdminPasswordModal(false);
+    setPendingAdminUser(null);
+    setAdminPasswordInput('');
+    setAdminPasswordError('');
+    await signOut(auth);
   };
 
   const handleSendRequest = async () => {
@@ -214,6 +301,77 @@ export default function Login() {
         )}
 
       </div>
+
+      {/* Admin Password Verification Modal */}
+      {showAdminPasswordModal && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-md z-50 flex items-center justify-center p-4 animate-in fade-in">
+          <div className="glass-card w-full max-w-sm p-6 relative border border-nyghto-orange/40 shadow-[0_0_30px_rgba(255,107,0,0.2)] animate-in zoom-in-95 rounded-2xl">
+            <button
+              onClick={handleCancelAdminLogin}
+              className="absolute right-4 top-4 text-gray-400 hover:text-white p-1 rounded-lg hover:bg-white/10 transition-colors"
+              title="Cancel"
+            >
+              <X className="w-5 h-5" />
+            </button>
+
+            <div className="flex flex-col items-center text-center mb-6">
+              <div className="w-12 h-12 rounded-full bg-nyghto-orange/20 border border-nyghto-orange/30 text-nyghto-orange flex items-center justify-center mb-3 shadow-lg">
+                <Lock className="w-6 h-6" />
+              </div>
+              <h3 className="text-xl font-bold text-white">Security Password</h3>
+              <p className="text-xs text-gray-400 mt-1 max-w-[260px]">
+                Enter your security password to access the Nyghto OS workspace.
+              </p>
+              {pendingAdminUser && (
+                <div className="mt-2 text-[11px] text-nyghto-orange font-mono bg-nyghto-orange/10 px-2.5 py-1 rounded border border-nyghto-orange/20">
+                  {pendingAdminUser.email}
+                </div>
+              )}
+            </div>
+
+            {adminPasswordError && (
+              <div className="mb-4 p-2.5 rounded-lg bg-red-500/10 border border-red-500/20 text-red-400 text-xs text-center font-medium animate-shake">
+                {adminPasswordError}
+              </div>
+            )}
+
+            <form onSubmit={handleVerifyAdminPassword} className="space-y-4">
+              <div>
+                <input
+                  type="password"
+                  autoFocus
+                  maxLength={30}
+                  value={adminPasswordInput}
+                  onChange={(e) => {
+                    setAdminPasswordInput(e.target.value);
+                    setAdminPasswordError('');
+                  }}
+                  placeholder="Enter password"
+                  className="w-full text-center text-lg tracking-[0.2em] font-mono py-3 bg-nyghto-dark/90 border border-white/20 rounded-xl text-white placeholder:text-gray-600 focus:outline-none focus:border-nyghto-orange focus:ring-1 focus:ring-nyghto-orange shadow-inner"
+                />
+              </div>
+
+              <div className="flex gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={handleCancelAdminLogin}
+                  className="w-1/2 py-2.5 bg-white/5 hover:bg-white/10 text-gray-300 rounded-xl text-xs font-semibold transition-colors border border-white/10"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={!adminPasswordInput}
+                  className="w-1/2 btn-primary py-2.5 text-xs font-bold rounded-xl shadow-lg disabled:opacity-50 flex items-center justify-center gap-1.5"
+                >
+                  <ShieldCheck className="w-4 h-4" />
+                  <span>Verify Password</span>
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

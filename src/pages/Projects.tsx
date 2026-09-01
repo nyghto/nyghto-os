@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { Search, Plus, Filter, MoreVertical, Clock, CheckCircle2, AlertCircle, PlayCircle, PauseCircle, X, LayoutGrid, List, Link, ExternalLink } from 'lucide-react';
-import { collection, onSnapshot, addDoc, query, orderBy, serverTimestamp, deleteDoc, doc, updateDoc } from 'firebase/firestore';
+import { Search, Plus, Filter, MoreVertical, Clock, CheckCircle2, AlertCircle, PlayCircle, PauseCircle, X, LayoutGrid, List, Link, ExternalLink, Lock, Trash2 } from 'lucide-react';
+import { collection, onSnapshot, addDoc, query, orderBy, serverTimestamp, deleteDoc, doc, updateDoc, getDoc } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import { useAuth } from '../contexts/AuthContext';
 import { hasAdminAccess, isSuperAdmin } from '../utils/permissions';
@@ -152,19 +152,68 @@ export default function Projects() {
     }
   };
 
-  const deleteProject = async (projectId: string, projectName: string) => {
+  // Admin Delete Confirmation with Password Modal State
+  const [deletingProject, setDeletingProject] = useState<{ id: string; name: string } | null>(null);
+  const [deleteProjPassInput, setDeleteProjPassInput] = useState('');
+  const [deleteProjPassError, setDeleteProjPassError] = useState('');
+  const [isDeletingProjLoading, setIsDeletingProjLoading] = useState(false);
+
+  const promptDeleteProject = (proj: { id: string; name: string }) => {
+    setDeletingProject(proj);
+    setDeleteProjPassInput('');
+    setDeleteProjPassError('');
+    setActiveDropdown(null);
+  };
+
+  const confirmDeleteProjectWithPassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!deletingProject || !user?.email) return;
+
+    setDeleteProjPassError('');
+    setIsDeletingProjLoading(true);
+
+    const emailClean = user.email.toLowerCase().trim();
+    const enteredPass = deleteProjPassInput.trim();
+
+    // Default password fallbacks
+    const defaultPasswords: Record<string, string> = {
+      'amaldas.co@gmail.com': 'amal123',
+      'salurinshan9539@gmail.com': 'rinshan123',
+      'shahalmuhammed404@gmail.com': 'shahal123',
+      'team.nyghto@gmail.com': '1111'
+    };
+
     try {
-      await deleteDoc(doc(db, 'projects', projectId));
-      
+      let expectedPass = '9999';
+
+      // Check admin_config deletePin
+      const adminDoc = await getDoc(doc(db, 'settings', 'admin_config'));
+      if (adminDoc.exists() && adminDoc.data().deletePin) {
+        expectedPass = adminDoc.data().deletePin.toString().trim();
+      }
+
+      if (enteredPass !== expectedPass) {
+        setDeleteProjPassError('Incorrect Delete Password! Project was not deleted.');
+        setIsDeletingProjLoading(false);
+        return;
+      }
+
+      // Password verified! Delete project
+      await deleteDoc(doc(db, 'projects', deletingProject.id));
       await addDoc(collection(db, 'activities'), {
-        text: `${userData?.name || 'User'} deleted project '${projectName}'`,
+        text: `${userData?.name || 'Admin'} deleted project '${deletingProject.name}'`,
         type: 'project',
         iconColor: 'text-red-500',
         createdAt: serverTimestamp()
       });
-      setActiveDropdown(null);
-    } catch (error) {
+
+      setDeletingProject(null);
+      setDeleteProjPassInput('');
+    } catch (error: any) {
       console.error("Error deleting project:", error);
+      setDeleteProjPassError(error.message || 'Failed to delete project');
+    } finally {
+      setIsDeletingProjLoading(false);
     }
   };
 
@@ -255,10 +304,12 @@ export default function Projects() {
                 </button>
                 {isMainAdmin && (
                   <button
-                    onClick={() => deleteProject(project.id, project.name)}
-                    className="w-full text-left px-4 py-2 text-sm text-red-500 hover:bg-white/5 transition-colors"
+                    type="button"
+                    onClick={() => promptDeleteProject({ id: project.id, name: project.name })}
+                    className="w-full text-left px-4 py-2 text-sm text-red-500 hover:bg-white/5 transition-colors flex items-center gap-1.5"
                   >
-                    Delete Project
+                    <Trash2 className="w-3.5 h-3.5" />
+                    <span>Delete Project</span>
                   </button>
                 )}
               </div>
@@ -837,6 +888,72 @@ export default function Projects() {
                   className="btn-primary"
                 >
                   Save Changes
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Delete Project Security Confirmation Modal (Requires Password) */}
+      {deletingProject && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-md z-[100] flex items-center justify-center p-4 animate-in fade-in" onClick={() => setDeletingProject(null)}>
+          <div className="glass-card w-full max-w-sm p-6 relative border border-red-500/40 shadow-[0_0_40px_rgba(239,68,68,0.2)] rounded-2xl animate-in zoom-in-95" onClick={e => e.stopPropagation()}>
+            <button
+              type="button"
+              onClick={() => setDeletingProject(null)}
+              className="absolute right-4 top-4 text-gray-400 hover:text-white p-1 rounded-lg hover:bg-white/10 transition-colors"
+            >
+              <X className="w-5 h-5" />
+            </button>
+
+            <div className="flex flex-col items-center text-center mb-5">
+              <div className="w-12 h-12 rounded-full bg-red-500/20 border border-red-500/30 text-red-400 flex items-center justify-center mb-3 shadow-lg">
+                <Trash2 className="w-6 h-6" />
+              </div>
+              <h3 className="text-lg font-bold text-white">Delete Project Confirmation</h3>
+              <p className="text-xs text-gray-400 mt-1 max-w-[240px]">
+                Enter Admin Delete Password to delete <b className="text-white font-medium">"{deletingProject.name}"</b>.
+              </p>
+            </div>
+
+            {deleteProjPassError && (
+              <div className="mb-4 p-2.5 rounded-lg bg-red-500/10 border border-red-500/20 text-red-400 text-xs text-center font-medium leading-relaxed animate-shake">
+                {deleteProjPassError}
+              </div>
+            )}
+
+            <form onSubmit={confirmDeleteProjectWithPassword} className="space-y-4">
+              <div>
+                <input
+                  type="password"
+                  autoFocus
+                  required
+                  value={deleteProjPassInput}
+                  onChange={(e) => {
+                    setDeleteProjPassInput(e.target.value);
+                    setDeleteProjPassError('');
+                  }}
+                  placeholder="Enter Delete Password (••••)"
+                  className="w-full text-center text-base tracking-[0.2em] font-mono py-2.5 bg-nyghto-dark/90 border border-white/20 rounded-xl text-white placeholder:text-gray-600 focus:outline-none focus:border-red-500 focus:ring-1 focus:ring-red-500 shadow-inner"
+                />
+              </div>
+
+              <div className="flex gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setDeletingProject(null)}
+                  className="w-1/2 py-2.5 bg-white/5 hover:bg-white/10 text-gray-300 rounded-xl text-xs font-semibold transition-colors border border-white/10"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={!deleteProjPassInput || isDeletingProjLoading}
+                  className="w-1/2 py-2.5 bg-red-600 hover:bg-red-700 text-white rounded-xl text-xs font-bold transition-colors shadow-lg disabled:opacity-50 flex items-center justify-center gap-1.5"
+                >
+                  <Trash2 className="w-4 h-4" />
+                  <span>{isDeletingProjLoading ? 'Deleting...' : 'Delete Project'}</span>
                 </button>
               </div>
             </form>

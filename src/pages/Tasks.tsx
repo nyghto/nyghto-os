@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { Search, Plus, Filter, MoreVertical, MessageSquare, Paperclip, Clock, Calendar, Users, X } from 'lucide-react';
-import { collection, onSnapshot, addDoc, updateDoc, doc, deleteDoc, serverTimestamp } from 'firebase/firestore';
+import { Search, Plus, Filter, MoreVertical, MessageSquare, Paperclip, Clock, Calendar, Users, X, CheckCircle2, Lock, AlertTriangle, Trash2 } from 'lucide-react';
+import { collection, onSnapshot, addDoc, updateDoc, doc, deleteDoc, serverTimestamp, getDoc } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import { useAuth } from '../contexts/AuthContext';
 import { hasAdminAccess, isSuperAdmin } from '../utils/permissions';
@@ -29,6 +29,17 @@ const formatDate = (dateStr: string) => {
   return dateStr;
 };
 
+const formatTimestamp = (ts: any) => {
+  if (!ts) return null;
+  try {
+    const d = ts.toDate ? ts.toDate() : (typeof ts === 'number' ? new Date(ts) : new Date(ts));
+    if (isNaN(d.getTime())) return null;
+    return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+  } catch (e) {
+    return null;
+  }
+};
+
 export default function Tasks() {
   const { user, userData } = useAuth();
   const isMainAdmin = isSuperAdmin(user?.email);
@@ -47,6 +58,12 @@ export default function Tasks() {
   // Drag and drop state
   const [draggedTaskId, setDraggedTaskId] = useState<string | null>(null);
   const [draggedOverColumn, setDraggedOverColumn] = useState<string | null>(null);
+
+  // Admin Delete Confirmation with Password Modal State
+  const [deletingTask, setDeletingTask] = useState<{ id: string; title: string } | null>(null);
+  const [deletePassInput, setDeletePassInput] = useState('');
+  const [deletePassError, setDeletePassError] = useState('');
+  const [isDeletingLoading, setIsDeletingLoading] = useState(false);
 
   useEffect(() => {
     // Subscribe to real-time updates from Firestore
@@ -72,17 +89,17 @@ export default function Tasks() {
         project: newTaskProject || 'General',
         priority: newTaskPriority,
         status: newTaskStatus,
+        assigneeId: newTaskAssignee,
         dueDate: newTaskDueDate || 'Today',
         comments: 0,
         attachments: 0,
-        assigneeId: newTaskAssignee,
         createdAt: serverTimestamp()
       });
-
+      
       await addDoc(collection(db, 'activities'), {
         text: `${userData?.name || 'User'} created task '${newTaskTitle}'`,
         type: 'task',
-        iconColor: 'text-blue-500',
+        iconColor: 'text-orange-500',
         createdAt: serverTimestamp()
       });
 
@@ -90,7 +107,6 @@ export default function Tasks() {
       setNewTaskTitle('');
       setNewTaskProject('');
       setNewTaskPriority('Medium');
-      setNewTaskAssignee(teamMembers[0]?.id || 'u1');
       setNewTaskDueDate('');
     } catch (error) {
       console.error("Error adding task: ", error);
@@ -109,19 +125,62 @@ export default function Tasks() {
     }
   };
   
-  const deleteTask = async (taskId: string, taskTitle?: string) => {
+  // Prompt password confirmation before deleting
+  const promptDeleteTask = (task: { id: string; title: string }) => {
+    setDeletingTask(task);
+    setDeletePassInput('');
+    setDeletePassError('');
+  };
+
+  const confirmDeleteTaskWithPassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!deletingTask || !user?.email) return;
+
+    setDeletePassError('');
+    setIsDeletingLoading(true);
+
+    const emailClean = user.email.toLowerCase().trim();
+    const enteredPass = deletePassInput.trim();
+
+    // Default password fallbacks
+    const defaultPasswords: Record<string, string> = {
+      'amaldas.co@gmail.com': 'amal123',
+      'salurinshan9539@gmail.com': 'rinshan123',
+      'shahalmuhammed404@gmail.com': 'shahal123',
+      'team.nyghto@gmail.com': '1111'
+    };
+
     try {
-      await deleteDoc(doc(db, 'tasks', taskId));
-      if (taskTitle) {
-        await addDoc(collection(db, 'activities'), {
-          text: `${userData?.name || 'User'} deleted task '${taskTitle}'`,
-          type: 'task',
-          iconColor: 'text-red-500',
-          createdAt: serverTimestamp()
-        });
+      let expectedPass = '9999';
+
+      // Check admin_config deletePin
+      const adminDoc = await getDoc(doc(db, 'settings', 'admin_config'));
+      if (adminDoc.exists() && adminDoc.data().deletePin) {
+        expectedPass = adminDoc.data().deletePin.toString().trim();
       }
-    } catch (error) {
+
+      if (enteredPass !== expectedPass) {
+        setDeletePassError('Incorrect Delete Password! Task was not deleted.');
+        setIsDeletingLoading(false);
+        return;
+      }
+
+      // Password verified! Delete task
+      await deleteDoc(doc(db, 'tasks', deletingTask.id));
+      await addDoc(collection(db, 'activities'), {
+        text: `${userData?.name || 'Admin'} deleted task '${deletingTask.title}'`,
+        type: 'task',
+        iconColor: 'text-red-500',
+        createdAt: serverTimestamp()
+      });
+
+      setDeletingTask(null);
+      setDeletePassInput('');
+    } catch (error: any) {
       console.error("Error deleting task: ", error);
+      setDeletePassError(error.message || 'Failed to delete task');
+    } finally {
+      setIsDeletingLoading(false);
     }
   };
 
@@ -171,6 +230,9 @@ export default function Tasks() {
       const updatePayload: any = { progress: clamped };
       if (clamped === 100) {
         updatePayload.status = 'Completed';
+        if (!task.completedAt) {
+          updatePayload.completedAt = serverTimestamp();
+        }
       } else if (clamped > 0) {
         if (task.status === 'To Do') {
           updatePayload.status = 'In Progress';
@@ -198,6 +260,9 @@ export default function Tasks() {
         const updatePayload: any = { status: column };
         if (column === 'Completed') {
           updatePayload.progress = 100;
+          if (!task.completedAt) {
+            updatePayload.completedAt = serverTimestamp();
+          }
         } else if (column === 'To Do') {
           updatePayload.progress = 0;
         } else if (column === 'In Progress' && (task.progress === undefined || task.progress === 0 || task.progress === 100)) {
@@ -286,7 +351,12 @@ export default function Tasks() {
                       {task.priority}
                     </span>
                     {isMainAdmin && (
-                      <button onClick={() => deleteTask(task.id, task.title)} className="text-theme-muted hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity" title="Delete Task">
+                      <button 
+                        type="button"
+                        onClick={() => promptDeleteTask({ id: task.id, title: task.title })} 
+                        className="text-theme-muted hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity p-0.5 rounded hover:bg-white/5" 
+                        title="Delete Task (Requires Password)"
+                      >
                         <X className="w-4 h-4" />
                       </button>
                     )}
@@ -397,122 +467,140 @@ export default function Tasks() {
                     );
                   })()}
                   
-                  <div className="flex justify-between items-center pt-3 border-t border-theme-border">
-                    <div className="flex items-center gap-3 text-theme-muted">
-                      {task.comments > 0 && (
-                        <div className="flex items-center gap-1 text-xs">
-                          <MessageSquare className="w-3.5 h-3.5" />
-                          {task.comments}
+                  <div className="flex flex-col gap-2 pt-3 border-t border-theme-border">
+                    {/* Dates Bar: Added Date & Completed/Due Status */}
+                    <div className="flex items-center justify-between text-[11px] text-theme-muted gap-2">
+                      <div className="flex items-center gap-1 text-gray-400" title="Date task was created">
+                        <Clock className="w-3 h-3 text-gray-500" />
+                        <span>Added: {formatTimestamp(task.createdAt) || 'Recent'}</span>
+                      </div>
+
+                      {task.status === 'Completed' ? (
+                        <div className="flex items-center gap-1 text-green-400 font-semibold bg-green-500/10 px-1.5 py-0.5 rounded border border-green-500/20" title="Completed Date">
+                          <CheckCircle2 className="w-3 h-3 text-green-400" />
+                          <span>Done: {formatTimestamp(task.completedAt) || 'Completed'}</span>
                         </div>
-                      )}
-                      {task.attachments > 0 && (
-                        <div className="flex items-center gap-1 text-xs">
-                          <Paperclip className="w-3.5 h-3.5" />
-                          {task.attachments}
+                      ) : (
+                        <div className="relative">
+                          <div 
+                            className={`flex items-center gap-1 font-medium transition-colors px-1.5 py-0.5 rounded ${
+                              isMainAdmin ? 'hover:text-nyghto-orange hover:bg-white/5 cursor-pointer text-theme-text' : 'cursor-default text-theme-muted'
+                            }`}
+                            onClick={(e) => {
+                              if (!isMainAdmin) return;
+                              e.stopPropagation();
+                              setActiveDropdown(`date-${column}-${task.id}`);
+                            }}
+                            title={isMainAdmin ? "Click to update due date (Admin Only)" : "Due Date"}
+                          >
+                            <Calendar className="w-3 h-3 text-nyghto-orange" />
+                            <span>Due: {formatDate(task.dueDate)}</span>
+                          </div>
+                          
+                          {isMainAdmin && activeDropdown === `date-${column}-${task.id}` && (
+                            <div 
+                              className="absolute bottom-6 right-0 bg-theme-card border border-theme-border shadow-xl rounded-lg p-3 w-44 z-20"
+                              onClick={(e) => e.stopPropagation()}
+                            >
+                              <label className="block text-xs font-semibold text-theme-muted mb-2">Update Due Date (Admin)</label>
+                              <input 
+                                type="date" 
+                                className="w-full bg-theme-bg border border-theme-border rounded py-1 px-2 text-xs text-theme-text mb-3 focus:outline-none focus:border-nyghto-orange"
+                                defaultValue={task.dueDate !== 'Today' ? task.dueDate : ''}
+                                onChange={async (e) => {
+                                  if (!e.target.value) return;
+                                  try {
+                                    await updateDoc(doc(db, 'tasks', task.id), { dueDate: e.target.value });
+                                  } catch(err) {}
+                                }}
+                                onKeyDown={(e) => {
+                                  if (e.key === 'Enter') {
+                                    setActiveDropdown(null);
+                                  }
+                                }}
+                              />
+                              <button 
+                                onClick={() => setActiveDropdown(null)}
+                                className="w-full text-center text-xs font-medium bg-white/5 border border-white/10 rounded py-1.5 hover:bg-white/10 transition-colors"
+                              >
+                                Close
+                              </button>
+                            </div>
+                          )}
                         </div>
                       )}
                     </div>
-                    
-                    <div className="flex items-center gap-2 relative">
-                      <div className="relative">
-                        <div 
-                          className={`flex items-center gap-1 text-xs text-theme-muted transition-colors ${
-                            isPermitted ? 'hover:text-nyghto-orange cursor-pointer' : 'cursor-default'
-                          }`}
-                          onClick={(e) => {
-                            if (!isPermitted) return;
-                            e.stopPropagation();
-                            setActiveDropdown(`date-${column}-${task.id}`);
-                          }}
-                          title={isPermitted ? "Click to update due date" : undefined}
-                        >
-                          <Calendar className="w-3 h-3" />
-                          {formatDate(task.dueDate)}
-                        </div>
-                        
-                        {isPermitted && activeDropdown === `date-${column}-${task.id}` && (
-                          <div 
-                            className="absolute bottom-6 left-0 bg-theme-card border border-theme-border shadow-xl rounded-lg p-3 w-44 z-20"
-                            onClick={(e) => e.stopPropagation()}
-                          >
-                            <label className="block text-xs font-semibold text-theme-muted mb-2">Update Due Date</label>
-                            <input 
-                              type="date" 
-                              className="w-full bg-theme-bg border border-theme-border rounded py-1 px-2 text-xs text-theme-text mb-3 focus:outline-none focus:border-nyghto-orange"
-                              defaultValue={task.dueDate !== 'Today' ? task.dueDate : ''}
-                              onChange={async (e) => {
-                                if (!e.target.value) return;
-                                try {
-                                  await updateDoc(doc(db, 'tasks', task.id), { dueDate: e.target.value });
-                                } catch(err) {}
-                              }}
-                              onKeyDown={(e) => {
-                                if (e.key === 'Enter') {
-                                  setActiveDropdown(null);
-                                }
-                              }}
-                            />
-                            <button 
-                              onClick={() => setActiveDropdown(null)}
-                              className="w-full text-center text-xs font-medium bg-white/5 border border-white/10 rounded py-1.5 hover:bg-white/10 transition-colors"
-                            >
-                              Close
-                            </button>
+
+                    {/* Bottom Row: Comments, Attachments & Assignee */}
+                    <div className="flex justify-between items-center pt-2 border-t border-theme-border/50">
+                      <div className="flex items-center gap-3 text-theme-muted">
+                        {task.comments > 0 && (
+                          <div className="flex items-center gap-1 text-xs">
+                            <MessageSquare className="w-3.5 h-3.5" />
+                            {task.comments}
+                          </div>
+                        )}
+                        {task.attachments > 0 && (
+                          <div className="flex items-center gap-1 text-xs">
+                            <Paperclip className="w-3.5 h-3.5" />
+                            {task.attachments}
                           </div>
                         )}
                       </div>
                       
-                      {/* Assignee Avatar with button */}
-                      <div 
-                        onClick={(e) => {
-                          if (!isMainAdmin) return;
-                          e.stopPropagation();
-                          setActiveDropdown(`${column}-${task.id}`);
-                        }}
-                        className={`flex items-center gap-1.5 ${isMainAdmin ? 'cursor-pointer group/assign' : 'cursor-default'}`}
-                        title={isMainAdmin ? `Assigned to ${assignee.name}. Click to reassign.` : `Assigned to ${assignee.name}`}
-                      >
-                        {assignee.avatarImage ? (
-                          <img 
-                            src={assignee.avatarImage} 
-                            alt={assignee.name} 
-                            className={`w-6 h-6 rounded-full object-cover shadow-sm ${isMainAdmin ? 'group-hover/assign:ring-2 group-hover/assign:ring-nyghto-orange transition-all' : ''}`}
-                          />
-                        ) : (
+                      <div className="flex items-center gap-2 relative">
+                        {/* Assignee Avatar with button */}
+                        <div 
+                          onClick={(e) => {
+                            if (!isMainAdmin) return;
+                            e.stopPropagation();
+                            setActiveDropdown(`${column}-${task.id}`);
+                          }}
+                          className={`flex items-center gap-1.5 ${isMainAdmin ? 'cursor-pointer group/assign' : 'cursor-default'}`}
+                          title={isMainAdmin ? `Assigned to ${assignee.name}. Click to reassign.` : `Assigned to ${assignee.name}`}
+                        >
+                          {assignee.avatarImage ? (
+                            <img 
+                              src={assignee.avatarImage} 
+                              alt={assignee.name} 
+                              className={`w-6 h-6 rounded-full object-cover shadow-sm ${isMainAdmin ? 'group-hover/assign:ring-2 group-hover/assign:ring-nyghto-orange transition-all' : ''}`}
+                            />
+                          ) : (
+                            <div 
+                              className={`w-6 h-6 rounded-full ${assignee.color} flex items-center justify-center text-[10px] font-bold text-white shadow-sm ${isMainAdmin ? 'group-hover/assign:ring-2 group-hover/assign:ring-nyghto-orange transition-all' : ''}`}
+                            >
+                              {assignee.initial}
+                            </div>
+                          )}
+                          <span className={`text-[10px] text-theme-muted font-semibold uppercase tracking-wider ${isMainAdmin ? 'group-hover/assign:text-nyghto-orange transition-colors' : ''}`}>
+                            {assignee.name}
+                          </span>
+                        </div>
+
+                        {/* Dropdown Menu (Only Super Admin can reassign) */}
+                        {isMainAdmin && activeDropdown === `${column}-${task.id}` && (
                           <div 
-                            className={`w-6 h-6 rounded-full ${assignee.color} flex items-center justify-center text-[10px] font-bold text-white shadow-sm ${isMainAdmin ? 'group-hover/assign:ring-2 group-hover/assign:ring-nyghto-orange transition-all' : ''}`}
+                            className="absolute bottom-8 right-0 bg-theme-card border border-theme-border shadow-xl rounded-lg w-48 py-2 z-10"
+                            onClick={(e) => e.stopPropagation()}
                           >
-                            {assignee.initial}
+                            <div className="px-3 py-1.5 text-xs font-semibold text-theme-muted flex items-center gap-2">
+                              <Users className="w-3 h-3" /> Assign To
+                            </div>
+                            {teamMembers.map(member => (
+                              <button
+                                key={member.id}
+                                onClick={() => assignTask(task.id, member.id)}
+                                className="w-full text-left px-3 py-2 text-sm text-theme-text hover:bg-theme-border transition-colors flex items-center gap-2"
+                              >
+                                <div className={`w-5 h-5 rounded-full ${member.color} text-white flex items-center justify-center text-[9px] font-bold`}>
+                                  {member.initial}
+                                </div>
+                                {member.name}
+                              </button>
+                            ))}
                           </div>
                         )}
-                        <span className={`text-[10px] text-theme-muted font-semibold uppercase tracking-wider ${isMainAdmin ? 'group-hover/assign:text-nyghto-orange transition-colors' : ''}`}>
-                          {assignee.name}
-                        </span>
                       </div>
-
-                      {/* Dropdown Menu (Only Super Admin can reassign) */}
-                      {isMainAdmin && activeDropdown === `${column}-${task.id}` && (
-                        <div 
-                          className="absolute bottom-8 right-0 bg-theme-card border border-theme-border shadow-xl rounded-lg w-48 py-2 z-10"
-                          onClick={(e) => e.stopPropagation()}
-                        >
-                          <div className="px-3 py-1.5 text-xs font-semibold text-theme-muted flex items-center gap-2">
-                            <Users className="w-3 h-3" /> Assign To
-                          </div>
-                          {teamMembers.map(member => (
-                            <button
-                              key={member.id}
-                              onClick={() => assignTask(task.id, member.id)}
-                              className="w-full text-left px-3 py-2 text-sm text-theme-text hover:bg-theme-border transition-colors flex items-center gap-2"
-                            >
-                              <div className={`w-5 h-5 rounded-full ${member.color} text-white flex items-center justify-center text-[9px] font-bold`}>
-                                {member.initial}
-                              </div>
-                              {member.name}
-                            </button>
-                          ))}
-                        </div>
-                      )}
                     </div>
                   </div>
                 </div>
@@ -617,6 +705,72 @@ export default function Tasks() {
                   className="btn-primary px-6 py-2 rounded-lg disabled:opacity-50"
                 >
                   Create Task
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Delete Task Security Confirmation Modal (Requires Password) */}
+      {deletingTask && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-md z-[100] flex items-center justify-center p-4 animate-in fade-in" onClick={() => setDeletingTask(null)}>
+          <div className="glass-card w-full max-w-sm p-6 relative border border-red-500/40 shadow-[0_0_40px_rgba(239,68,68,0.2)] rounded-2xl animate-in zoom-in-95" onClick={e => e.stopPropagation()}>
+            <button
+              type="button"
+              onClick={() => setDeletingTask(null)}
+              className="absolute right-4 top-4 text-gray-400 hover:text-white p-1 rounded-lg hover:bg-white/10 transition-colors"
+            >
+              <X className="w-5 h-5" />
+            </button>
+
+            <div className="flex flex-col items-center text-center mb-5">
+              <div className="w-12 h-12 rounded-full bg-red-500/20 border border-red-500/30 text-red-400 flex items-center justify-center mb-3 shadow-lg">
+                <Trash2 className="w-6 h-6" />
+              </div>
+              <h3 className="text-lg font-bold text-white">Delete Task Confirmation</h3>
+              <p className="text-xs text-gray-400 mt-1 max-w-[240px]">
+                Enter Admin Delete Password to delete <b className="text-white font-medium">"{deletingTask.title}"</b>.
+              </p>
+            </div>
+
+            {deletePassError && (
+              <div className="mb-4 p-2.5 rounded-lg bg-red-500/10 border border-red-500/20 text-red-400 text-xs text-center font-medium leading-relaxed animate-shake">
+                {deletePassError}
+              </div>
+            )}
+
+            <form onSubmit={confirmDeleteTaskWithPassword} className="space-y-4">
+              <div>
+                <input
+                  type="password"
+                  autoFocus
+                  required
+                  value={deletePassInput}
+                  onChange={(e) => {
+                    setDeletePassInput(e.target.value);
+                    setDeletePassError('');
+                  }}
+                  placeholder="Enter Delete Password (••••)"
+                  className="w-full text-center text-base tracking-[0.2em] font-mono py-2.5 bg-nyghto-dark/90 border border-white/20 rounded-xl text-white placeholder:text-gray-600 focus:outline-none focus:border-red-500 focus:ring-1 focus:ring-red-500 shadow-inner"
+                />
+              </div>
+
+              <div className="flex gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setDeletingTask(null)}
+                  className="w-1/2 py-2.5 bg-white/5 hover:bg-white/10 text-gray-300 rounded-xl text-xs font-semibold transition-colors border border-white/10"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={!deletePassInput || isDeletingLoading}
+                  className="w-1/2 py-2.5 bg-red-600 hover:bg-red-700 text-white rounded-xl text-xs font-bold transition-colors shadow-lg disabled:opacity-50 flex items-center justify-center gap-1.5"
+                >
+                  <Trash2 className="w-4 h-4" />
+                  <span>{isDeletingLoading ? 'Deleting...' : 'Delete Task'}</span>
                 </button>
               </div>
             </form>

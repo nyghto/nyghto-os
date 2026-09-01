@@ -82,6 +82,18 @@ export default function Team() {
   const [editAuthDuty, setEditAuthDuty] = useState('');
   const [editAuthColor, setEditAuthColor] = useState('emerald');
 
+  // Change Admin Password / Security PIN State (Login Password & Delete Password)
+  const [isChangingAdminPin, setIsChangingAdminPin] = useState(false);
+  const [passwordTargetType, setPasswordTargetType] = useState<'login' | 'delete'>('login');
+  const [currentAdminPin, setCurrentAdminPin] = useState('1111');
+  const [currentDeletePin, setCurrentDeletePin] = useState('9999');
+  const [oldPinInput, setOldPinInput] = useState('');
+  const [newPinInput, setNewPinInput] = useState('');
+  const [confirmPinInput, setConfirmPinInput] = useState('');
+  const [pinChangeError, setPinChangeError] = useState('');
+  const [pinChangeSuccess, setPinChangeSuccess] = useState('');
+  const [isSavingPin, setIsSavingPin] = useState(false);
+
   // Form State
   const [reportTitle, setReportTitle] = useState('');
   const [reportDescription, setReportDescription] = useState('');
@@ -227,14 +239,92 @@ export default function Team() {
       setAccessRequests(reqList);
     });
 
+    const unsubscribeAdminConfig = onSnapshot(doc(db, 'settings', 'admin_config'), (snapshot) => {
+      if (snapshot.exists()) {
+        const data = snapshot.data();
+        if (data.adminPin) {
+          setCurrentAdminPin(data.adminPin.toString().trim());
+        }
+        if (data.deletePin) {
+          setCurrentDeletePin(data.deletePin.toString().trim());
+        }
+      }
+    });
+
     return () => {
       unsubscribeReports();
       unsubscribeAttendance();
       unsubscribeTeamStatus();
       unsubscribeAuthEmails();
       unsubscribeAccessRequests();
+      unsubscribeAdminConfig();
     };
   }, []);
+
+  const handleChangeAdminPin = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!isMainAdmin) return;
+    setPinChangeError('');
+    setPinChangeSuccess('');
+
+    const cleanOld = oldPinInput.trim();
+    const cleanNew = newPinInput.trim();
+    const cleanConfirm = confirmPinInput.trim();
+
+    // Verify Old PIN first
+    const isLoginPass = passwordTargetType === 'login';
+    const activePin = isLoginPass ? (currentAdminPin || '1111') : (currentDeletePin || '9999');
+    
+    if (cleanOld !== activePin) {
+      setPinChangeError(`Old ${isLoginPass ? 'Login' : 'Delete'} password is incorrect! Please enter your current password.`);
+      return;
+    }
+
+    if (!cleanNew) {
+      setPinChangeError('Please enter a new password.');
+      return;
+    }
+
+    if (cleanNew.length < 4) {
+      setPinChangeError('New password must be at least 4 characters or digits.');
+      return;
+    }
+
+    if (cleanNew !== cleanConfirm) {
+      setPinChangeError('New password and confirmation password do not match!');
+      return;
+    }
+
+    setIsSavingPin(true);
+    try {
+      const updatePayload = isLoginPass 
+        ? { adminPin: cleanNew, updatedAt: serverTimestamp(), updatedBy: currentName, updatedByEmail: user?.email || '' }
+        : { deletePin: cleanNew, deletePinUpdatedAt: serverTimestamp(), updatedBy: currentName, updatedByEmail: user?.email || '' };
+
+      await setDoc(doc(db, 'settings', 'admin_config'), updatePayload, { merge: true });
+
+      await addDoc(collection(db, 'activities'), {
+        text: `${currentName} updated the Admin ${isLoginPass ? 'Login' : 'Delete Action'} Security Password`,
+        type: 'general',
+        iconColor: 'text-nyghto-orange',
+        createdAt: serverTimestamp()
+      });
+
+      setPinChangeSuccess(`Admin ${isLoginPass ? 'Login' : 'Delete Action'} password updated successfully!`);
+      setOldPinInput('');
+      setNewPinInput('');
+      setConfirmPinInput('');
+      setTimeout(() => {
+        setIsChangingAdminPin(false);
+        setPinChangeSuccess('');
+      }, 2000);
+    } catch (err: any) {
+      console.error("Error updating admin password:", err);
+      setPinChangeError(err.message || 'Failed to update admin password');
+    } finally {
+      setIsSavingPin(false);
+    }
+  };
 
   const handleAddAuthorizedEmail = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -499,9 +589,21 @@ export default function Team() {
     }
   };
 
+  const canManageReport = (report: Report) => {
+    if (!user) return false;
+    if (isMainAdmin) return true; // Super Admin (team.nyghto@gmail.com) can manage all reports
+    if (report.employeeEmail && report.employeeEmail.toLowerCase().trim() === user.email?.toLowerCase().trim()) return true;
+    if (report.employeeId && (report.employeeId === user.uid || report.employeeId === userData?.id)) return true;
+    return false;
+  };
+
   const handleUpdateReport = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!editingReport) return;
+    if (!canManageReport(editingReport)) {
+      alert("Permission denied. Only Admins can edit or delete other members' reports.");
+      return;
+    }
     try {
       await updateDoc(doc(db, 'reports', editingReport.id), {
         title: editTitle.trim() || 'Work Progress Report',
@@ -516,7 +618,12 @@ export default function Team() {
     }
   };
 
-  const deleteReport = async (reportId: string) => {
+  const deleteReport = async (reportId: string, reportObj?: Report) => {
+    const rep = reportObj || reports.find(r => r.id === reportId);
+    if (rep && !canManageReport(rep)) {
+      alert("Permission denied. Only Admins can delete reports created by other employees.");
+      return;
+    }
     try {
       await deleteDoc(doc(db, 'reports', reportId));
       setActiveDropdown(null);
@@ -880,30 +987,34 @@ export default function Team() {
                           >
                             <Eye className="w-4 h-4" />
                           </button>
-                          <button
-                            onClick={() => {
-                              setEditingReport(report);
-                              setEditTitle(report.title || '');
-                              setEditDescription(report.description || '');
-                              setEditHours(report.hours.toString());
-                              setEditTasksDone(report.tasksDone.toString());
-                            }}
-                            title="Edit Report"
-                            className="p-2 text-gray-400 hover:text-white hover:bg-white/10 rounded-lg transition-colors border border-transparent hover:border-white/20"
-                          >
-                            <Pencil className="w-4 h-4" />
-                          </button>
-                          <button
-                            onClick={() => {
-                              if (window.confirm("Are you sure you want to delete this report?")) {
-                                deleteReport(report.id);
-                              }
-                            }}
-                            title="Delete Report"
-                            className="p-2 text-gray-400 hover:text-red-400 hover:bg-red-500/10 rounded-lg transition-colors border border-transparent hover:border-red-500/20"
-                          >
-                            <Trash2 className="w-4 h-4" />
-                          </button>
+                          {canManageReport(report) && (
+                            <>
+                              <button
+                                onClick={() => {
+                                  setEditingReport(report);
+                                  setEditTitle(report.title || '');
+                                  setEditDescription(report.description || '');
+                                  setEditHours(report.hours.toString());
+                                  setEditTasksDone(report.tasksDone.toString());
+                                }}
+                                title="Edit Report"
+                                className="p-2 text-gray-400 hover:text-white hover:bg-white/10 rounded-lg transition-colors border border-transparent hover:border-white/20"
+                              >
+                                <Pencil className="w-4 h-4" />
+                              </button>
+                              <button
+                                onClick={() => {
+                                  if (window.confirm("Are you sure you want to delete this report?")) {
+                                    deleteReport(report.id, report);
+                                  }
+                                }}
+                                title="Delete Report"
+                                className="p-2 text-gray-400 hover:text-red-400 hover:bg-red-500/10 rounded-lg transition-colors border border-transparent hover:border-red-500/20"
+                              >
+                                <Trash2 className="w-4 h-4" />
+                              </button>
+                            </>
+                          )}
                         </div>
                       </td>
                     </tr>
@@ -1293,6 +1404,8 @@ export default function Team() {
               </div>
             </div>
           )}
+
+
 
           {/* Section 1: Core Founder Accounts (Protected) */}
           <div className="glass-card p-6">
@@ -2111,35 +2224,39 @@ export default function Team() {
             </div>
 
             <div className="pt-4 border-t border-white/10 flex justify-between items-center gap-3">
-              <button 
-                onClick={() => {
-                  if (window.confirm("Are you sure you want to delete this report?")) {
-                    deleteReport(viewingReport.id);
-                    setViewingReport(null);
-                  }
-                }}
-                className="px-3.5 py-2 bg-red-500/10 hover:bg-red-500/20 text-red-400 border border-red-500/20 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-colors"
-              >
-                <Trash2 className="w-4 h-4" />
-                Delete Report
-              </button>
-
-              <div className="flex gap-2">
+              {canManageReport(viewingReport) ? (
                 <button 
                   onClick={() => {
-                    const r = viewingReport;
-                    setViewingReport(null);
-                    setEditingReport(r);
-                    setEditTitle(r.title || '');
-                    setEditDescription(r.description || '');
-                    setEditHours(r.hours.toString());
-                    setEditTasksDone(r.tasksDone.toString());
+                    if (window.confirm("Are you sure you want to delete this report?")) {
+                      deleteReport(viewingReport.id, viewingReport);
+                      setViewingReport(null);
+                    }
                   }}
-                  className="px-3.5 py-2 bg-white/5 hover:bg-white/10 text-white border border-white/10 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-colors"
+                  className="px-3.5 py-2 bg-red-500/10 hover:bg-red-500/20 text-red-400 border border-red-500/20 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-colors"
                 >
-                  <Pencil className="w-3.5 h-3.5" />
-                  Edit
+                  <Trash2 className="w-4 h-4" />
+                  Delete Report
                 </button>
+              ) : <div />}
+
+              <div className="flex gap-2">
+                {canManageReport(viewingReport) && (
+                  <button 
+                    onClick={() => {
+                      const r = viewingReport;
+                      setViewingReport(null);
+                      setEditingReport(r);
+                      setEditTitle(r.title || '');
+                      setEditDescription(r.description || '');
+                      setEditHours(r.hours.toString());
+                      setEditTasksDone(r.tasksDone.toString());
+                    }}
+                    className="px-3.5 py-2 bg-white/5 hover:bg-white/10 text-white border border-white/10 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-colors"
+                  >
+                    <Pencil className="w-3.5 h-3.5" />
+                    Edit
+                  </button>
+                )}
                 <button 
                   onClick={() => setViewingReport(null)} 
                   className="px-4 py-2 bg-white/10 hover:bg-white/20 text-white rounded-lg text-xs font-semibold transition-colors"
@@ -2665,6 +2782,120 @@ export default function Team() {
                 >
                   <Check className="w-4 h-4" />
                   Save Coordinates
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Change Admin Password / Security PIN Modal (Super Admin only) */}
+      {isChangingAdminPin && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-md z-50 flex items-center justify-center p-4 animate-in fade-in" onClick={() => setIsChangingAdminPin(false)}>
+          <div className="glass-card w-full max-w-md p-6 relative border border-nyghto-orange/40 shadow-[0_0_40px_rgba(255,107,0,0.25)] rounded-2xl animate-in zoom-in-95" onClick={e => e.stopPropagation()}>
+            <button
+              type="button"
+              onClick={() => setIsChangingAdminPin(false)}
+              className="absolute right-4 top-4 text-gray-400 hover:text-white p-1 rounded-lg hover:bg-white/10 transition-colors"
+            >
+              <X className="w-5 h-5" />
+            </button>
+
+            <div className="flex items-center gap-3 mb-5">
+              <div className={`w-11 h-11 rounded-xl flex items-center justify-center shadow-lg ${passwordTargetType === 'login' ? 'bg-nyghto-orange/20 border border-nyghto-orange/30 text-nyghto-orange' : 'bg-red-500/20 border border-red-500/30 text-red-400'}`}>
+                {passwordTargetType === 'login' ? <Lock className="w-6 h-6" /> : <Trash2 className="w-6 h-6" />}
+              </div>
+              <div>
+                <h3 className="text-lg font-bold text-white">
+                  {passwordTargetType === 'login' ? 'Change Admin Login Password' : 'Change Admin Delete Action Password'}
+                </h3>
+                <p className="text-xs text-gray-400">
+                  {passwordTargetType === 'login' ? 'Update security PIN for Admin Google Login' : 'Update security PIN required when deleting tasks & projects'}
+                </p>
+              </div>
+            </div>
+
+            {pinChangeError && (
+              <div className="mb-4 p-3 rounded-xl bg-red-500/10 border border-red-500/20 text-red-400 text-xs font-medium leading-relaxed animate-shake">
+                {pinChangeError}
+              </div>
+            )}
+
+            {pinChangeSuccess && (
+              <div className="mb-4 p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-xs font-medium leading-relaxed flex items-center gap-2">
+                <CheckCircle2 className="w-4 h-4 shrink-0" />
+                <span>{pinChangeSuccess}</span>
+              </div>
+            )}
+
+            <form onSubmit={handleChangeAdminPin} className="space-y-4">
+              <div>
+                <label className="block text-xs font-semibold text-gray-300 uppercase tracking-wider mb-1.5">
+                  Current (Old) Password *
+                </label>
+                <input
+                  type="password"
+                  required
+                  autoFocus
+                  value={oldPinInput}
+                  onChange={(e) => {
+                    setOldPinInput(e.target.value);
+                    setPinChangeError('');
+                  }}
+                  placeholder="Enter current old password"
+                  className="w-full bg-nyghto-dark/90 border border-white/10 rounded-xl p-3 text-sm text-white focus:outline-none focus:border-nyghto-orange font-mono"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-gray-300 uppercase tracking-wider mb-1.5">
+                  New Password / PIN *
+                </label>
+                <input
+                  type="password"
+                  required
+                  value={newPinInput}
+                  onChange={(e) => {
+                    setNewPinInput(e.target.value);
+                    setPinChangeError('');
+                  }}
+                  placeholder="Enter new password (min 4 characters)"
+                  className="w-full bg-nyghto-dark/90 border border-white/10 rounded-xl p-3 text-sm text-white focus:outline-none focus:border-nyghto-orange font-mono"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-gray-300 uppercase tracking-wider mb-1.5">
+                  Confirm New Password *
+                </label>
+                <input
+                  type="password"
+                  required
+                  value={confirmPinInput}
+                  onChange={(e) => {
+                    setConfirmPinInput(e.target.value);
+                    setPinChangeError('');
+                  }}
+                  placeholder="Re-enter new password to confirm"
+                  className="w-full bg-nyghto-dark/90 border border-white/10 rounded-xl p-3 text-sm text-white focus:outline-none focus:border-nyghto-orange font-mono"
+                />
+              </div>
+
+              <div className="flex gap-3 pt-3 border-t border-white/10">
+                <button
+                  type="button"
+                  onClick={() => setIsChangingAdminPin(false)}
+                  className="flex-1 py-2.5 bg-white/5 hover:bg-white/10 text-gray-300 rounded-xl text-xs font-semibold transition-colors border border-white/10"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={isSavingPin || !oldPinInput || !newPinInput || !confirmPinInput}
+                  className="flex-1 btn-primary py-2.5 text-xs font-bold rounded-xl shadow-lg disabled:opacity-50 flex items-center justify-center gap-1.5"
+                >
+                  <ShieldCheck className="w-4 h-4" />
+                  <span>{isSavingPin ? 'Updating...' : 'Update Password'}</span>
                 </button>
               </div>
             </form>
