@@ -109,7 +109,12 @@ export default function Login() {
       setShowAdminPasswordModal(true);
       setAdminPasswordInput('');
     } catch (err: any) {
-      setError(err.message || 'Authentication failed');
+      if (err?.code === 'auth/unauthorized-domain' || err?.message?.includes('unauthorized-domain')) {
+        const currentHost = window.location.hostname;
+        setError(`Domain not authorized: Please add "${currentHost}" in Firebase Console -> Authentication -> Settings -> Authorized domains.`);
+      } else {
+        setError(err.message || 'Authentication failed');
+      }
       setLoading(false);
     } finally {
       setLoading(false);
