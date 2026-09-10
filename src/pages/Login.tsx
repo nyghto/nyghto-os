@@ -25,7 +25,7 @@ export default function Login() {
   const [adminPin, setAdminPin] = useState('1111');
   const [customPasswords, setCustomPasswords] = useState<Record<string, string>>({});
 
-  // Load live Admin PIN & custom user passwords from Firestore
+  // Load live Admin PIN & custom user passwords from Firestore safely
   useEffect(() => {
     const unsubAdmin = onSnapshot(doc(db, 'settings', 'admin_config'), (snap) => {
       if (snap.exists()) {
@@ -34,6 +34,9 @@ export default function Login() {
           setAdminPin(data.adminPin.toString().trim());
         }
       }
+    }, (error) => {
+      // Safely fallback if Firestore rules block unauthenticated reads
+      console.warn("Notice: Using default admin config:", error.message);
     });
 
     const unsubUserPasswords = onSnapshot(collection(db, 'user_passwords'), (snapshot) => {
@@ -45,6 +48,9 @@ export default function Login() {
         }
       });
       setCustomPasswords(passMap);
+    }, (error) => {
+      // Safely fallback if Firestore rules block unauthenticated reads
+      console.warn("Notice: Using default user credentials:", error.message);
     });
 
     return () => {
