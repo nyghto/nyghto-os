@@ -15,7 +15,10 @@ export default function AttendanceReport() {
     const unsubAttendance = onSnapshot(collection(db, 'attendance'), snapshot => {
       setAttendanceRecords(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
     });
-    return () => unsubAttendance();
+
+    return () => {
+      unsubAttendance();
+    };
   }, []);
 
   const firstDay = new Date(displayYear, displayMonth, 1).getDay();
@@ -29,6 +32,7 @@ export default function AttendanceReport() {
   }
   const maxMarksForMonth = (daysInMonth - totalSundays) * 10;
 
+  // Monthly Attendance Score for selected display month
   const calculateScore = (memberId: string) => {
     let totalMarks = 0;
     let leavesTaken = 0;
@@ -57,7 +61,7 @@ export default function AttendanceReport() {
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
           <h1 className="text-3xl font-bold mb-1 text-theme-text">Attendance Report</h1>
-          <p className="text-theme-muted">Monthly attendance overview for the team.</p>
+          <p className="text-theme-muted">Monthly attendance overview and attendance scores for the team.</p>
         </div>
       </div>
 
@@ -118,14 +122,14 @@ export default function AttendanceReport() {
                         </span>
                       )}
                     </h4>
-                    <div className="text-xs text-theme-muted mt-1">{score} / {maxMarksForMonth} Marks</div>
+                    <div className="text-xs text-theme-muted mt-1">{score} / {maxMarksForMonth} Attendance Marks</div>
                   </div>
                 </div>
                 <div className="flex flex-col items-end">
                   <span className={`text-xl font-bold ${percentage >= 80 ? 'text-green-500' : percentage >= 50 ? 'text-nyghto-yellow' : 'text-red-500'}`}>
                     {percentage}%
                   </span>
-                  <span className="text-[10px] text-theme-muted uppercase tracking-wider font-medium">Score</span>
+                  <span className="text-[10px] text-theme-muted uppercase tracking-wider font-medium">Att. Score</span>
                 </div>
               </div>
             );
@@ -160,43 +164,38 @@ export default function AttendanceReport() {
             
             <div className="p-6">
               <div className="flex justify-between items-center mb-6">
-                <h3 className="text-lg font-bold text-theme-text">{monthName}</h3>
-                <div className="flex gap-2">
-                  <button 
-                    onClick={() => {
-                      if (displayMonth === 0) { setDisplayMonth(11); setDisplayYear(y => y - 1); }
-                      else setDisplayMonth(m => m - 1);
-                    }}
-                    className="p-1 text-theme-muted hover:text-theme-text hover:bg-theme-border rounded transition-colors"
-                  >
-                    &lt;
-                  </button>
-                  <button 
-                    onClick={() => {
-                      if (displayMonth === 11) { setDisplayMonth(0); setDisplayYear(y => y + 1); }
-                      else setDisplayMonth(m => m + 1);
-                    }}
-                    className="p-1 text-theme-muted hover:text-theme-text hover:bg-theme-border rounded transition-colors"
-                  >
-                    &gt;
-                  </button>
+                <h3 className="font-bold text-theme-text">{monthName}</h3>
+                <div className="text-xs text-theme-muted">
+                  Score: <span className="font-bold text-nyghto-orange">{calculateScore(selectedMember.id)}</span> / {maxMarksForMonth}
                 </div>
               </div>
-              
-              <div className="grid grid-cols-7 gap-1 text-center text-xs mb-2 text-theme-muted font-medium">
-                <div>Su</div><div>Mo</div><div>Tu</div><div>We</div><div>Th</div><div>Fr</div><div>Sa</div>
+
+              {/* Day Headers */}
+              <div className="grid grid-cols-7 gap-1 text-center text-xs font-semibold text-theme-muted mb-2">
+                <div>Su</div>
+                <div>Mo</div>
+                <div>Tu</div>
+                <div>We</div>
+                <div>Th</div>
+                <div>Fr</div>
+                <div>Sa</div>
               </div>
-              
+
+              {/* Calendar Grid */}
               <div className="grid grid-cols-7 gap-1 text-center text-sm">
+                {/* Empty slots for days before 1st of month */}
                 {Array.from({ length: firstDay }).map((_, i) => (
                   <div key={`empty-${i}`} className="p-2"></div>
                 ))}
-                {Array.from({ length: daysInMonth }, (_, i) => i + 1).map(day => {
+
+                {/* Days of month */}
+                {Array.from({ length: daysInMonth }).map((_, i) => {
+                  const day = i + 1;
                   const dateStr = `${displayYear}-${String(displayMonth + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
                   const record = attendanceRecords.find(r => r.userId === selectedMember.id && r.date === dateStr);
                   const status = record?.status || 'None';
-                  
-                  let styleClass = 'text-theme-text hover:bg-theme-border font-medium';
+
+                  let styleClass = 'bg-theme-bg/50 text-theme-muted border border-transparent';
                   if (status === 'Present') styleClass = 'bg-green-500/20 text-green-500 border border-green-500/30 font-bold';
                   else if (status === 'Half Day') styleClass = 'bg-yellow-500/20 text-yellow-500 border border-yellow-500/30 font-bold';
                   else if (status === 'Absent') styleClass = 'bg-red-500/20 text-red-500 border border-red-500/30 font-bold';
@@ -210,7 +209,7 @@ export default function AttendanceReport() {
                     >
                       {day}
                     </div>
-                  )
+                  );
                 })}
               </div>
 

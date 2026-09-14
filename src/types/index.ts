@@ -42,6 +42,8 @@ export interface Project {
   priority: 'Low' | 'Medium' | 'High' | 'Critical';
   team: string[];
   budget?: number;
+  advance?: number;
+  receivedAmount?: number;
   links?: { title: string; url: string }[];
   createdAt: number;
   createdBy: string;
@@ -67,7 +69,32 @@ export interface Report {
 export interface Activity {
   id: string;
   text: string;
-  type: 'project' | 'task' | 'report' | 'client' | 'general';
+  type: 'project' | 'task' | 'report' | 'client' | 'general' | 'points';
   iconColor: string;
   createdAt: number;
 }
+
+export interface PointRecord {
+  id: string;
+  memberId: string;
+  memberEmail: string;
+  memberName: string;
+  points: number;
+  reason: string;
+  category?: 'Task Completion' | 'Performance Bonus' | 'Overtime' | 'Special Achievement' | 'Disciplinary' | 'Other';
+  date: string; // YYYY-MM-DD
+  awardedBy: string;
+  createdAt: any;
+}
+
+export interface Withdrawal {
+  id: string;
+  amount: number;
+  reason: string;
+  category?: string;
+  date: string; // YYYY-MM-DD
+  withdrawnBy: string;
+  withdrawnByEmail?: string;
+  createdAt: any;
+}
+

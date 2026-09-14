@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { BrowserRouter, Routes, Route, Link, useLocation, Navigate } from 'react-router-dom';
-import { LayoutDashboard, FolderKanban, CheckSquare, Users, BarChart3, Settings, Bell, Search, LogOut, Sun, Moon, X, Palette, PenTool, Key, Lock, CheckCircle2, ShieldCheck, Trash2 } from 'lucide-react';
+import { LayoutDashboard, FolderKanban, CheckSquare, Users, BarChart3, Settings, Bell, Search, LogOut, Sun, Moon, X, Palette, PenTool, Key, Lock, CheckCircle2, ShieldCheck, Trash2, Award } from 'lucide-react';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { ThemeProvider, useTheme, THEME_COLORS } from './contexts/ThemeContext';
 import type { ThemeColorName } from './contexts/ThemeContext';
@@ -225,6 +225,13 @@ function Sidebar() {
               </div>
               
               <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                <Link
+                  to="/team"
+                  className="text-theme-muted hover:text-yellow-400 p-1 transition-colors"
+                  title="View My Points & Leaderboard"
+                >
+                  <Award className="w-4 h-4" />
+                </Link>
                 <button 
                   onClick={() => {
                     setIsPasswordModalOpen(true);

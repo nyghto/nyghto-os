@@ -1,12 +1,12 @@
 import React, { useState, useEffect } from 'react';
-import { Search, Plus, Filter, FileText, CheckCircle2, Clock, AlertCircle, Users, X, MoreVertical, Eye, Trash2, Pencil, ShieldCheck, UserPlus, Mail, Lock, Bell, Check, MapPin, Navigation, Compass, Radio } from 'lucide-react';
+import { Search, Plus, Filter, FileText, CheckCircle2, Clock, AlertCircle, Users, X, MoreVertical, Eye, Trash2, Pencil, ShieldCheck, UserPlus, Mail, Lock, Bell, Check, MapPin, Navigation, Compass, Radio, Award, Trophy, Star } from 'lucide-react';
 import { collection, onSnapshot, addDoc, query, orderBy, serverTimestamp, doc, updateDoc, deleteDoc, setDoc } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import { useAuth } from '../contexts/AuthContext';
 import { useTeam } from '../contexts/TeamContext';
 import { hasAdminAccess, isSuperAdmin, isCoreFounder, CORE_EMAILS, getUserRole, getUserName, getUserAvatar, getUserDuty, getUserDuties } from '../utils/permissions';
 import { getOfficeLocation, saveOfficeLocation, verifyAndMarkAutoAttendance, type OfficeLocation, type AutoAttendanceResult } from '../utils/geoAttendance';
-import type { Report } from '../types';
+import type { Report, PointRecord } from '../types';
 
 const COLOR_PRESETS = [
   { id: 'orange', name: 'Orange', bg: 'bg-nyghto-orange/20', text: 'text-nyghto-orange', border: 'border-nyghto-orange/30', dot: '#ff6b00' },
@@ -93,6 +93,19 @@ export default function Team() {
   const [pinChangeError, setPinChangeError] = useState('');
   const [pinChangeSuccess, setPinChangeSuccess] = useState('');
   const [isSavingPin, setIsSavingPin] = useState(false);
+
+  // Points & Rewards State
+  const [pointRecords, setPointRecords] = useState<PointRecord[]>([]);
+  const [isAwardingPoints, setIsAwardingPoints] = useState(false);
+  const [pointMemberId, setPointMemberId] = useState('');
+  const [pointAmount, setPointAmount] = useState('10');
+  const [pointType, setPointType] = useState<'add' | 'deduct'>('add');
+  const [pointCategory, setPointCategory] = useState<'Task Completion' | 'Performance Bonus' | 'Overtime' | 'Special Achievement' | 'Disciplinary' | 'Other'>('Performance Bonus');
+  const [pointReason, setPointReason] = useState('');
+  const [pointDate, setPointDate] = useState(new Date().toISOString().split('T')[0]);
+  const [isSubmittingPoint, setIsSubmittingPoint] = useState(false);
+  const [pointsLeaderboardFilter, setPointsLeaderboardFilter] = useState<'monthly' | 'total'>('monthly');
+
 
   // Form State
   const [reportTitle, setReportTitle] = useState('');
@@ -251,6 +264,11 @@ export default function Team() {
       }
     });
 
+    const unsubscribePoints = onSnapshot(query(collection(db, 'points_history'), orderBy('createdAt', 'desc')), (snapshot) => {
+      const records = snapshot.docs.map(d => ({ id: d.id, ...d.data() })) as PointRecord[];
+      setPointRecords(records);
+    });
+
     return () => {
       unsubscribeReports();
       unsubscribeAttendance();
@@ -258,6 +276,7 @@ export default function Team() {
       unsubscribeAuthEmails();
       unsubscribeAccessRequests();
       unsubscribeAdminConfig();
+      unsubscribePoints();
     };
   }, []);
 
@@ -417,7 +436,7 @@ export default function Team() {
 
   const handleSaveProfileEdits = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!hasAdminAccess(user?.email) || !selectedProfile) return;
+    if (!isMainAdmin || !selectedProfile) return;
 
     try {
       const emailClean = selectedProfile.email.toLowerCase().trim();
@@ -759,15 +778,17 @@ export default function Team() {
   }
   const maxMarksForMonth = (daysInMonth - totalSundays) * 10;
 
-  const calculateScore = (memberId: string) => {
+  // Calculate attendance score for any given month & year
+  const calculateAttendanceScoreForMonth = (memberId: string, y: number, m: number) => {
+    const dInMonth = new Date(y, m + 1, 0).getDate();
     let totalMarks = 0;
     let leavesTaken = 0;
-    
-    for (let i = 1; i <= daysInMonth; i++) {
-      const dateStr = `${attendanceYear}-${String(attendanceMonth + 1).padStart(2, '0')}-${String(i).padStart(2, '0')}`;
+
+    for (let i = 1; i <= dInMonth; i++) {
+      const dateStr = `${y}-${String(m + 1).padStart(2, '0')}-${String(i).padStart(2, '0')}`;
       const record = attendanceRecords.find(r => r.userId === memberId && r.date === dateStr);
       const status = record?.status || 'None';
-      const isSunday = new Date(attendanceYear, attendanceMonth, i).getDay() === 0;
+      const isSunday = new Date(y, m, i).getDay() === 0;
 
       if (!isSunday && status !== 'Off Day') {
         if (status === 'Present') totalMarks += 10;
@@ -775,12 +796,135 @@ export default function Team() {
         else if (status === 'Absent') leavesTaken++;
       }
     }
-    
-    // First 2 leaves give +10 marks. Any extra leaves give 0 marks (no penalty).
     const freeLeaves = Math.min(leavesTaken, 2);
     totalMarks += (freeLeaves * 10);
-    
     return totalMarks;
+  };
+
+  // Lifetime attendance score for a member across all attendance records in database
+  const calculateLifetimeAttendanceScore = (memberId: string) => {
+    const memberAttendance = attendanceRecords.filter(r => r.userId === memberId);
+    // Group by year-month to properly apply the 2 free leaves allowance per month
+    const monthGroups: Record<string, { year: number; month: number }> = {};
+    memberAttendance.forEach(rec => {
+      if (rec.date && typeof rec.date === 'string') {
+        const parts = rec.date.split('-');
+        if (parts.length >= 2) {
+          const ym = `${parts[0]}-${parts[1]}`;
+          if (!monthGroups[ym]) {
+            monthGroups[ym] = { year: parseInt(parts[0]), month: parseInt(parts[1]) - 1 };
+          }
+        }
+      }
+    });
+
+    // Also ensure current month is calculated even if no records yet
+    const curYm = `${attendanceYear}-${String(attendanceMonth + 1).padStart(2, '0')}`;
+    if (!monthGroups[curYm]) {
+      monthGroups[curYm] = { year: attendanceYear, month: attendanceMonth };
+    }
+
+    let lifetimeAttendance = 0;
+    Object.values(monthGroups).forEach(({ year, month }) => {
+      lifetimeAttendance += calculateAttendanceScoreForMonth(memberId, year, month);
+    });
+
+    return lifetimeAttendance;
+  };
+
+  // Monthly bonus / admin-awarded points in currently selected attendance month
+  const calculateMonthlyBonusPoints = (memberId: string, memberEmail?: string) => {
+    const targetMonthPrefix = `${attendanceYear}-${String(attendanceMonth + 1).padStart(2, '0')}`;
+    return pointRecords
+      .filter(p => (p.memberId === memberId || (memberEmail && p.memberEmail?.toLowerCase() === memberEmail.toLowerCase())) && p.date?.startsWith(targetMonthPrefix))
+      .reduce((acc, curr) => acc + (Number(curr.points) || 0), 0);
+  };
+
+  // Total all-time bonus / admin-awarded points
+  const calculateTotalBonusPoints = (memberId: string, memberEmail?: string) => {
+    return pointRecords
+      .filter(p => p.memberId === memberId || (memberEmail && p.memberEmail?.toLowerCase() === memberEmail.toLowerCase()))
+      .reduce((acc, curr) => acc + (Number(curr.points) || 0), 0);
+  };
+
+  // Short helper for current selected attendance month
+  const calculateScore = (memberId: string) => calculateAttendanceScoreForMonth(memberId, attendanceYear, attendanceMonth);
+
+  // Combined Monthly Points (Attendance Score + Admin Bonus in this month)
+  const calculateTotalMonthlyPoints = (memberId: string, memberEmail?: string) => {
+    const attPoints = calculateScore(memberId);
+    const bonusPoints = calculateMonthlyBonusPoints(memberId, memberEmail);
+    return attPoints + bonusPoints;
+  };
+
+  // Combined Lifetime Total Points (All-time Attendance Score + All-time Admin Points)
+  const calculateLifetimeTotalPoints = (memberId: string, memberEmail?: string) => {
+    const lifetimeAtt = calculateLifetimeAttendanceScore(memberId);
+    const totalBonus = calculateTotalBonusPoints(memberId, memberEmail);
+    return lifetimeAtt + totalBonus;
+  };
+
+  // Admin Point Award Submission
+  const handleAwardPoints = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!isMainAdmin) {
+      alert("Only Super Admin (team.nyghto@gmail.com) can award or deduct points.");
+      return;
+    }
+
+    if (!pointMemberId || !pointAmount || !pointReason.trim()) {
+      alert("Please select a team member, point amount, and provide a valid reason.");
+      return;
+    }
+
+    const targetMember = teamMembers.find(m => m.id === pointMemberId);
+    if (!targetMember) return;
+
+    const rawNum = Math.abs(parseFloat(pointAmount));
+    const finalPoints = pointType === 'deduct' ? -rawNum : rawNum;
+
+    setIsSubmittingPoint(true);
+    try {
+      await addDoc(collection(db, 'points_history'), {
+        memberId: targetMember.id,
+        memberEmail: targetMember.email || '',
+        memberName: targetMember.name,
+        points: finalPoints,
+        reason: pointReason.trim(),
+        category: pointCategory,
+        date: pointDate,
+        awardedBy: currentName,
+        createdAt: serverTimestamp()
+      });
+
+      await addDoc(collection(db, 'activities'), {
+        text: `${currentName} ${finalPoints >= 0 ? 'awarded' : 'deducted'} ${Math.abs(finalPoints)} pts ${finalPoints >= 0 ? 'to' : 'from'} ${targetMember.name} (${pointCategory}: "${pointReason.trim()}")`,
+        type: 'points',
+        iconColor: finalPoints >= 0 ? 'text-green-400' : 'text-red-400',
+        createdAt: serverTimestamp()
+      });
+
+      setIsAwardingPoints(false);
+      setPointAmount('10');
+      setPointReason('');
+      setPointType('add');
+    } catch (err) {
+      console.error("Error awarding points:", err);
+      alert("Failed to submit points. Please try again.");
+    } finally {
+      setIsSubmittingPoint(false);
+    }
+  };
+
+  const handleDeletePointRecord = async (recordId: string, recordText: string) => {
+    if (!isMainAdmin) return;
+    if (window.confirm(`Delete this point entry (${recordText})?`)) {
+      try {
+        await deleteDoc(doc(db, 'points_history', recordId));
+      } catch (err) {
+        console.error("Error deleting point record:", err);
+      }
+    }
   };
   
   return (
@@ -791,6 +935,19 @@ export default function Team() {
           <p className="text-gray-400">Manage your team, view daily work reports, and control workspace access.</p>
         </div>
         <div className="flex items-center gap-3">
+          {isMainAdmin && (
+            <button 
+              onClick={() => {
+                setPointMemberId(teamMembers[0]?.id || '');
+                setIsAwardingPoints(true);
+              }}
+              className="px-4 py-2 bg-yellow-500/10 hover:bg-yellow-500/20 text-yellow-400 border border-yellow-500/30 rounded-lg text-sm font-semibold flex items-center gap-2 transition-all shadow-sm"
+              title="Award or deduct points (Super Admin only)"
+            >
+              <Award className="w-4 h-4 text-yellow-400" />
+              Award Points
+            </button>
+          )}
           {isMainAdmin && (
             <button 
               onClick={() => setIsAddingEmail(true)}
@@ -810,11 +967,12 @@ export default function Team() {
       </div>
 
       {/* Big Tab Boxes */}
-      <div className={`grid grid-cols-1 sm:grid-cols-2 ${isMainAdmin ? 'lg:grid-cols-4' : 'lg:grid-cols-3'} gap-4 mb-4`}>
+      <div className={`grid grid-cols-1 sm:grid-cols-2 ${isMainAdmin ? 'lg:grid-cols-5' : 'lg:grid-cols-4'} gap-4 mb-4`}>
         {[
           { id: 'Daily Reports', icon: FileText, desc: 'View & submit daily logs' },
           { id: 'Team Members', icon: Users, desc: 'Manage your team profiles' },
           { id: 'Attendance', icon: CheckCircle2, desc: 'Track daily presence' },
+          { id: 'Points & Ranking', icon: Award, desc: 'Leaderboard & employee points' },
           ...(isMainAdmin ? [{ id: 'Access Whitelist', icon: ShieldCheck, desc: 'Manage allowed Gmails' }] : [])
         ].map(t => (
           <button
@@ -1034,9 +1192,52 @@ export default function Team() {
       )}
 
       {tab === 'Team Members' && (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {teamMembers.map(member => {
-            const active = isMemberActive(member.id);
+        <div className="space-y-6">
+          {/* Top Banner inside Team Members */}
+          <div className="glass-card p-5 flex flex-col md:flex-row justify-between items-start md:items-center gap-4 bg-gradient-to-r from-yellow-500/10 via-white/5 to-nyghto-orange/10 border-yellow-500/30 shadow-lg">
+            <div className="flex items-center gap-3">
+              <div className="p-3 bg-yellow-500/20 text-yellow-400 rounded-xl border border-yellow-500/30">
+                <Trophy className="w-6 h-6" />
+              </div>
+              <div>
+                <h3 className="text-lg font-bold text-white flex items-center gap-2">
+                  <span>Employee Points & Performance</span>
+                  <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-yellow-500/20 text-yellow-300 border border-yellow-500/40">
+                    Live Scores Active
+                  </span>
+                </h3>
+                <p className="text-xs text-gray-300 mt-0.5">
+                  Every employee earns <b className="text-white">10 pts/day</b> from Attendance plus extra bonus points awarded by Admin.
+                </p>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-3 w-full md:w-auto">
+              <button
+                onClick={() => setTab('Points & Ranking')}
+                className="flex-1 md:flex-initial px-4 py-2 bg-white/10 hover:bg-white/20 text-white rounded-lg text-xs font-bold transition-all border border-white/20 flex items-center justify-center gap-1.5"
+              >
+                <Trophy className="w-4 h-4 text-yellow-400" />
+                View Full Ranking
+              </button>
+              {isMainAdmin && (
+                <button
+                  onClick={() => {
+                    setPointMemberId(teamMembers[0]?.id || '');
+                    setIsAwardingPoints(true);
+                  }}
+                  className="flex-1 md:flex-initial btn-primary py-2 px-4 text-xs font-bold rounded-lg shadow-md flex items-center justify-center gap-1.5"
+                >
+                  <Plus className="w-4 h-4" />
+                  Award / Deduct Points
+                </button>
+              )}
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            {teamMembers.map(member => {
+              const active = isMemberActive(member.id);
             return (
               <div key={member.id} className="glass-card p-6 flex flex-col items-center text-center hover:border-nyghto-orange/30 transition-colors relative group">
                 {/* Automatic Live Status Badge */}
@@ -1088,17 +1289,50 @@ export default function Team() {
                   })()}
                 </div>
                 
-                <div className="flex gap-2 w-full mt-2">
+                {/* Points Preview Badge */}
+                <div className="w-full bg-white/5 rounded-lg p-2 mb-3 border border-white/10 flex items-center justify-around text-xs">
+                  <div className="flex flex-col items-center">
+                    <span className="text-gray-400 text-[10px] uppercase font-semibold">Month Pts</span>
+                    <span className="font-bold text-nyghto-orange flex items-center gap-1">
+                      <Award className="w-3.5 h-3.5" />
+                      {calculateTotalMonthlyPoints(member.id, member.email)}
+                    </span>
+                  </div>
+                  <div className="h-6 w-[1px] bg-white/10" />
+                  <div className="flex flex-col items-center">
+                    <span className="text-gray-400 text-[10px] uppercase font-semibold">Total Pts</span>
+                    <span className="font-bold text-yellow-400 flex items-center gap-1">
+                      <Trophy className="w-3.5 h-3.5" />
+                      {calculateLifetimeTotalPoints(member.id, member.email)}
+                    </span>
+                  </div>
+                </div>
+
+                <div className="flex gap-2 w-full mt-1">
                   <button 
                     onClick={() => setSelectedProfile(member)}
-                    className="w-full py-2 bg-white/5 hover:bg-white/10 rounded-lg text-sm font-medium transition-colors border border-white/10"
+                    className="flex-1 py-2 bg-white/5 hover:bg-white/10 rounded-lg text-sm font-medium transition-colors border border-white/10"
                   >
                     View Profile
                   </button>
+                  {isMainAdmin && (
+                    <button
+                      onClick={() => {
+                        setPointMemberId(member.id);
+                        setIsAwardingPoints(true);
+                      }}
+                      title="Award or deduct points (Super Admin only)"
+                      className="px-3 py-2 bg-nyghto-orange/10 hover:bg-nyghto-orange/20 text-nyghto-orange border border-nyghto-orange/30 rounded-lg text-xs font-bold transition-colors flex items-center gap-1"
+                    >
+                      <Plus className="w-3.5 h-3.5" />
+                      Points
+                    </button>
+                  )}
                 </div>
               </div>
             );
           })}
+          </div>
         </div>
       )}
 
@@ -1229,9 +1463,12 @@ export default function Team() {
                         ) : (
                           <div className={`w-6 h-6 rounded-full ${member.color} text-white flex items-center justify-center text-xs font-bold`}>{member.initial}</div>
                         )}
-                        {member.name}
-                        <div className="text-[10px] bg-nyghto-orange/20 text-nyghto-orange px-2 py-0.5 rounded-full mt-1 border border-nyghto-orange/30">
+                        <span className="truncate max-w-[100px]">{member.name}</span>
+                        <div className="text-[10px] bg-nyghto-orange/20 text-nyghto-orange px-2 py-0.5 rounded-full mt-1 border border-nyghto-orange/30 font-semibold" title="Attendance Score / Max">
                           {calculateScore(member.id)} / {maxMarksForMonth}
+                        </div>
+                        <div className="text-[9px] bg-yellow-500/10 text-yellow-400 px-1.5 py-0.5 rounded-full border border-yellow-500/20 font-bold mt-0.5" title="Total Monthly Points (Attendance + Bonus)">
+                          ★ {calculateTotalMonthlyPoints(member.id, member.email)} pts
                         </div>
                       </div>
                     </th>
@@ -1324,6 +1561,364 @@ export default function Team() {
             <div className="flex items-center gap-1.5"><div className="w-4 h-4 rounded bg-red-500/20 border border-red-500/30 flex items-center justify-center text-[10px] text-red-400 font-bold">A</div> = Absent</div>
             <div className="flex items-center gap-1.5"><div className="w-4 h-4 rounded bg-gray-500/20 border border-gray-500/30 flex items-center justify-center text-[10px] text-gray-400 font-bold">O</div> = Off Day (Permanent)</div>
           </div>
+        </div>
+      )}
+
+      {tab === 'Points & Ranking' && (
+        <div className="space-y-6 animate-in fade-in">
+          {/* Header & Quick Action */}
+          <div className="glass-card p-6 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+            <div>
+              <div className="flex items-center gap-2">
+                <Trophy className="w-6 h-6 text-yellow-400" />
+                <h3 className="text-xl font-bold text-white">Team Points & Ranking</h3>
+              </div>
+              <p className="text-sm text-gray-400 mt-1 max-w-xl">
+                Combined evaluation score including <span className="text-nyghto-orange font-medium">Daily Attendance Score (10 pts/day)</span> + <span className="text-yellow-400 font-medium">Admin Performance Points</span>.
+              </p>
+            </div>
+
+            <div className="flex items-center gap-3">
+              <div className="flex bg-white/5 border border-white/10 rounded-lg p-1">
+                <button
+                  onClick={() => setPointsLeaderboardFilter('monthly')}
+                  className={`px-3 py-1.5 rounded-md text-xs font-bold transition-all ${
+                    pointsLeaderboardFilter === 'monthly'
+                      ? 'bg-nyghto-orange text-white shadow-sm'
+                      : 'text-gray-400 hover:text-white'
+                  }`}
+                >
+                  This Month ({monthName})
+                </button>
+                <button
+                  onClick={() => setPointsLeaderboardFilter('total')}
+                  className={`px-3 py-1.5 rounded-md text-xs font-bold transition-all ${
+                    pointsLeaderboardFilter === 'total'
+                      ? 'bg-nyghto-orange text-white shadow-sm'
+                      : 'text-gray-400 hover:text-white'
+                  }`}
+                >
+                  All-Time Total
+                </button>
+              </div>
+
+              {isMainAdmin && (
+                <button
+                  onClick={() => {
+                    setPointMemberId(teamMembers[0]?.id || '');
+                    setIsAwardingPoints(true);
+                  }}
+                  className="btn-primary flex items-center gap-2 text-sm whitespace-nowrap"
+                >
+                  <Award className="w-4 h-4" />
+                  Award / Deduct Points
+                </button>
+              )}
+            </div>
+          </div>
+
+          {/* Top 3 Podium / Cards */}
+          {(() => {
+            const sorted = [...teamMembers].map(member => {
+              const currentVal = pointsLeaderboardFilter === 'monthly'
+                ? calculateTotalMonthlyPoints(member.id, member.email)
+                : calculateLifetimeTotalPoints(member.id, member.email);
+              return { member, currentVal };
+            }).sort((a, b) => b.currentVal - a.currentVal);
+
+            // Calculate standard competition ranking (1224 or tied rank)
+            let currentRank = 1;
+            const rankedList = sorted.map((item, idx, arr) => {
+              if (idx > 0 && item.currentVal < arr[idx - 1].currentVal) {
+                currentRank = idx + 1;
+              }
+              const isTied = arr.filter(x => x.currentVal === item.currentVal).length > 1;
+              return { ...item, rank: currentRank, isTied };
+            });
+
+            return (
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                {rankedList.slice(0, 3).map(({ member, currentVal, rank, isTied }, idx) => {
+                  const monthlyPoints = calculateTotalMonthlyPoints(member.id, member.email);
+                  const totalPoints = calculateLifetimeTotalPoints(member.id, member.email);
+                  const attScore = calculateScore(member.id);
+                  const bonusScore = calculateMonthlyBonusPoints(member.id, member.email);
+                  const rankColors = [
+                    'from-yellow-500/20 via-yellow-500/10 to-transparent border-yellow-500/30 text-yellow-400',
+                    'from-slate-400/20 via-slate-400/10 to-transparent border-slate-400/30 text-slate-300',
+                    'from-amber-700/20 via-amber-700/10 to-transparent border-amber-700/30 text-amber-500'
+                  ];
+                  const rankIcons = ['🥇 1st Place', '🥈 2nd Place', '🥉 3rd Place'];
+                  const badgeText = isTied 
+                    ? `🤝 Tied ${rankIcons[rank - 1] || `#${rank}`}`
+                    : (rankIcons[rank - 1] || `#${rank} Place`);
+
+                  return (
+                    <div 
+                      key={member.id} 
+                      className={`glass-card p-5 flex flex-col items-center text-center relative overflow-hidden bg-gradient-to-b ${rankColors[rank - 1] || rankColors[2]} border hover:border-nyghto-orange/40 transition-all`}
+                    >
+                      <div className="text-xs font-bold uppercase tracking-wider mb-2 flex items-center gap-1.5 flex-wrap justify-center">
+                        <span>{badgeText}</span>
+                        {isTied && (
+                          <span className="text-[10px] bg-yellow-500/20 text-yellow-300 px-2 py-0.5 rounded-full border border-yellow-500/40">
+                            Same Points
+                          </span>
+                        )}
+                      </div>
+
+                      <div className="relative mb-3">
+                        {member.avatarImage ? (
+                          <img src={member.avatarImage} alt={member.name} className="w-16 h-16 rounded-full object-cover shadow-lg ring-2 ring-white/10" />
+                        ) : (
+                          <div className={`w-16 h-16 rounded-full ${member.color} flex items-center justify-center text-xl font-bold text-white shadow-lg`}>
+                            {member.initial}
+                          </div>
+                        )}
+                      </div>
+
+                      <h4 className="font-bold text-white text-base mb-0.5">{member.name}</h4>
+                      <span className="text-xs text-nyghto-orange font-semibold uppercase">{member.role}</span>
+
+                      {/* Points Breakdown */}
+                      <div className="w-full bg-white/5 rounded-xl p-3 my-3 border border-white/10 text-xs space-y-1">
+                        <div className="flex justify-between items-center text-gray-300">
+                          <span>Att. Score:</span>
+                          <span className="font-bold text-green-400">+{attScore} pts</span>
+                        </div>
+                        <div className="flex justify-between items-center text-gray-300">
+                          <span>Admin Bonus:</span>
+                          <span className={`font-bold ${bonusScore >= 0 ? 'text-nyghto-orange' : 'text-red-400'}`}>
+                            {bonusScore >= 0 ? `+${bonusScore}` : bonusScore} pts
+                          </span>
+                        </div>
+                        <div className="border-t border-white/10 pt-1.5 flex justify-between items-center">
+                          <span className="text-gray-300 font-medium">Month Total:</span>
+                          <span className="font-bold text-nyghto-orange text-sm">{monthlyPoints} pts</span>
+                        </div>
+                        <div className="flex justify-between items-center">
+                          <span className="text-gray-300 font-medium">All-Time Total:</span>
+                          <span className="font-bold text-yellow-400 text-sm">{totalPoints} pts</span>
+                        </div>
+                      </div>
+
+                      <div className="flex gap-2 w-full">
+                        <button
+                          onClick={() => setSelectedProfile(member)}
+                          className="flex-1 py-1.5 bg-white/5 hover:bg-white/10 rounded-lg text-xs font-medium transition-colors border border-white/10"
+                        >
+                          View Account
+                        </button>
+                        {isMainAdmin && (
+                          <button
+                            onClick={() => {
+                              setPointMemberId(member.id);
+                              setIsAwardingPoints(true);
+                            }}
+                            className="px-3 py-1.5 bg-nyghto-orange/20 hover:bg-nyghto-orange/30 text-nyghto-orange rounded-lg text-xs font-bold transition-colors border border-nyghto-orange/40 flex items-center gap-1"
+                          >
+                            <Award className="w-3.5 h-3.5" />
+                            Award
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            );
+          })()}
+
+          {/* Leaderboard Table */}
+          <div className="glass-card overflow-hidden">
+            <div className="p-4 border-b border-white/10 flex justify-between items-center">
+              <h4 className="font-bold text-white text-base">Full Team Rankings</h4>
+              <span className="text-xs text-gray-400">Sorted by {pointsLeaderboardFilter === 'monthly' ? 'Monthly Points' : 'All-Time Points'}</span>
+            </div>
+
+            <div className="overflow-x-auto custom-scrollbar">
+              <table className="w-full text-left text-sm">
+                <thead className="bg-white/5 text-gray-400 text-xs uppercase font-semibold">
+                  <tr>
+                    <th className="px-6 py-3.5">Rank</th>
+                    <th className="px-6 py-3.5">Member</th>
+                    <th className="px-6 py-3.5 text-center">Att. Score</th>
+                    <th className="px-6 py-3.5 text-center">Admin Bonus</th>
+                    <th className="px-6 py-3.5 text-center">Month Total</th>
+                    <th className="px-6 py-3.5 text-center">All-Time Total</th>
+                    <th className="px-6 py-3.5 text-right">Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-white/5">
+                  {(() => {
+                    const sorted = [...teamMembers].map(member => {
+                      const currentVal = pointsLeaderboardFilter === 'monthly'
+                        ? calculateTotalMonthlyPoints(member.id, member.email)
+                        : calculateLifetimeTotalPoints(member.id, member.email);
+                      return { member, currentVal };
+                    }).sort((a, b) => b.currentVal - a.currentVal);
+
+                    let currentRank = 1;
+                    const rankedList = sorted.map((item, idx, arr) => {
+                      if (idx > 0 && item.currentVal < arr[idx - 1].currentVal) {
+                        currentRank = idx + 1;
+                      }
+                      const isTied = arr.filter(x => x.currentVal === item.currentVal).length > 1;
+                      return { ...item, rank: currentRank, isTied };
+                    });
+
+                    return rankedList.map(({ member, rank, isTied }, idx) => {
+                      const monthlyPoints = calculateTotalMonthlyPoints(member.id, member.email);
+                      const totalPoints = calculateLifetimeTotalPoints(member.id, member.email);
+                      const attScore = calculateScore(member.id);
+                      const bonusScore = calculateMonthlyBonusPoints(member.id, member.email);
+                      const isTop3 = rank <= 3;
+
+                      return (
+                        <tr key={member.id} className="hover:bg-white/5 transition-colors">
+                          <td className="px-6 py-4">
+                            <span className={`inline-flex items-center justify-center px-2 py-1 rounded-full text-xs font-bold gap-1 ${
+                              rank === 1 ? 'bg-yellow-500/20 text-yellow-400 border border-yellow-500/40' :
+                              rank === 2 ? 'bg-slate-300/20 text-slate-200 border border-slate-300/40' :
+                              rank === 3 ? 'bg-amber-700/20 text-amber-500 border border-amber-700/40' :
+                              'text-gray-400 bg-white/5'
+                            }`}>
+                              <span>#{rank}</span>
+                              {isTied && <span className="text-[10px] opacity-80">(Tied)</span>}
+                            </span>
+                          </td>
+                          <td className="px-6 py-4">
+                            <div className="flex items-center gap-3">
+                              {member.avatarImage ? (
+                                <img src={member.avatarImage} alt={member.name} className="w-10 h-10 rounded-full object-cover border border-white/10" />
+                              ) : (
+                                <div className={`w-10 h-10 rounded-full ${member.color} text-white font-bold text-sm flex items-center justify-center`}>
+                                  {member.initial}
+                                </div>
+                              )}
+                              <div>
+                                <div className="font-bold text-white flex items-center gap-2">
+                                  <span>{member.name}</span>
+                                  {isTop3 && <Star className="w-3.5 h-3.5 text-yellow-400 fill-yellow-400" />}
+                                </div>
+                                <div className="text-xs text-gray-400">{member.role}</div>
+                              </div>
+                            </div>
+                          </td>
+                          <td className="px-6 py-4 text-center">
+                            <span className="px-2.5 py-1 rounded-md bg-green-500/10 border border-green-500/20 text-green-400 font-mono text-xs font-bold">
+                              +{attScore} pts
+                            </span>
+                          </td>
+                          <td className="px-6 py-4 text-center">
+                            <span className={`px-2.5 py-1 rounded-md border text-xs font-mono font-bold ${
+                              bonusScore >= 0 
+                                ? 'bg-yellow-500/10 border-yellow-500/20 text-yellow-400' 
+                                : 'bg-red-500/10 border-red-500/20 text-red-400'
+                            }`}>
+                              {bonusScore >= 0 ? `+${bonusScore}` : bonusScore} pts
+                            </span>
+                          </td>
+                          <td className="px-6 py-4 text-center">
+                            <div className="font-bold text-nyghto-orange text-base flex items-center justify-center gap-1">
+                              <Award className="w-4 h-4" />
+                              {monthlyPoints}
+                            </div>
+                          </td>
+                          <td className="px-6 py-4 text-center">
+                            <div className="font-bold text-yellow-400 text-base flex items-center justify-center gap-1">
+                              <Trophy className="w-4 h-4" />
+                              {totalPoints}
+                            </div>
+                          </td>
+                          <td className="px-6 py-4 text-right">
+                            <div className="flex items-center justify-end gap-2">
+                              <button
+                                onClick={() => setSelectedProfile(member)}
+                                className="px-3 py-1.5 bg-white/5 hover:bg-white/10 rounded-lg text-xs font-medium text-gray-300 hover:text-white transition-colors border border-white/10"
+                              >
+                                View
+                              </button>
+                              {isMainAdmin && (
+                                <button
+                                  onClick={() => {
+                                    setPointMemberId(member.id);
+                                    setIsAwardingPoints(true);
+                                  }}
+                                  className="px-2.5 py-1.5 bg-nyghto-orange/10 hover:bg-nyghto-orange/20 text-nyghto-orange border border-nyghto-orange/30 rounded-lg text-xs font-bold transition-colors flex items-center gap-1"
+                                >
+                                  <Plus className="w-3.5 h-3.5" /> Points
+                                </button>
+                              )}
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    });
+                  })()}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          {/* Points History Log (Admin Only) */}
+          {isMainAdmin && (
+            <div className="glass-card p-6">
+              <div className="flex justify-between items-center mb-4">
+                <div className="flex items-center gap-2">
+                  <Clock className="w-5 h-5 text-gray-400" />
+                  <h4 className="font-bold text-white text-base">Points Award & Deduction History</h4>
+                  <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-nyghto-orange/20 text-nyghto-orange border border-nyghto-orange/30">
+                    Admin Only
+                  </span>
+                </div>
+                <span className="text-xs text-gray-400">{pointRecords.length} records</span>
+              </div>
+
+              {pointRecords.length === 0 ? (
+                <div className="p-8 text-center text-gray-400 text-sm bg-white/5 rounded-xl border border-white/10">
+                  No custom points awarded yet. Admins can click "Award / Deduct Points" to add points for achievements, overtime, or task completion.
+                </div>
+              ) : (
+                <div className="space-y-3 max-h-[400px] overflow-y-auto custom-scrollbar pr-1">
+                  {pointRecords.map((item) => (
+                    <div key={item.id} className="p-3.5 bg-white/5 rounded-xl border border-white/10 flex items-center justify-between gap-3 hover:border-white/20 transition-all">
+                      <div className="flex items-center gap-3 overflow-hidden">
+                        <div className={`p-2 rounded-xl border font-bold text-sm min-w-[50px] text-center ${
+                          item.points >= 0
+                            ? 'bg-green-500/10 border-green-500/30 text-green-400'
+                            : 'bg-red-500/10 border-red-500/30 text-red-400'
+                        }`}>
+                          {item.points >= 0 ? `+${item.points}` : item.points}
+                        </div>
+                        <div className="overflow-hidden">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className="font-bold text-white text-sm">{item.memberName}</span>
+                            {item.category && (
+                              <span className="text-[10px] bg-purple-500/20 text-purple-300 border border-purple-500/30 px-2 py-0.5 rounded-full font-medium">
+                                {item.category}
+                              </span>
+                            )}
+                            <span className="text-xs text-gray-500">• {item.date}</span>
+                          </div>
+                          <p className="text-xs text-gray-300 mt-0.5 truncate">{item.reason}</p>
+                          <span className="text-[10px] text-gray-500">Awarded by: {item.awardedBy}</span>
+                        </div>
+                      </div>
+
+                      <button
+                        onClick={() => handleDeletePointRecord(item.id, `${item.memberName}: ${item.points} pts`)}
+                        title="Delete point entry"
+                        className="p-1.5 text-gray-400 hover:text-red-400 hover:bg-red-500/10 rounded-lg transition-colors border border-transparent hover:border-red-500/20 shrink-0"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
         </div>
       )}
 
@@ -1493,7 +2088,7 @@ export default function Team() {
                             </span>
                           )}
                         </div>
-                        {hasAdminAccess(user?.email) && (
+                        {isMainAdmin && (
                           <div className="flex items-center gap-1">
                             <button
                               onClick={() => {
@@ -2340,7 +2935,81 @@ export default function Team() {
                   </div>
                 </div>
 
-                {hasAdminAccess(user?.email) && (
+                {/* Points & Evaluation Section in Profile */}
+                <div className="mt-5 p-4 rounded-xl bg-gradient-to-br from-white/5 to-white/[0.02] border border-white/10">
+                  <div className="flex items-center justify-between mb-3">
+                    <div className="flex items-center gap-2">
+                      <Trophy className="w-4 h-4 text-yellow-400" />
+                      <span className="text-xs font-bold uppercase tracking-wider text-white">Points & Evaluation</span>
+                    </div>
+                    {isMainAdmin && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setPointMemberId(currentProfile.id);
+                          setIsAwardingPoints(true);
+                        }}
+                        className="text-xs bg-nyghto-orange/20 hover:bg-nyghto-orange/30 text-nyghto-orange border border-nyghto-orange/40 font-bold px-2.5 py-1 rounded-lg transition-colors flex items-center gap-1"
+                      >
+                        <Plus className="w-3 h-3" /> Award Points
+                      </button>
+                    )}
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-3 mb-3">
+                    <div className="p-2.5 bg-nyghto-dark/80 rounded-lg border border-white/10 text-center">
+                      <span className="text-[10px] text-gray-400 uppercase font-semibold block">This Month ({monthName})</span>
+                      <span className="text-lg font-bold text-nyghto-orange">
+                        {calculateTotalMonthlyPoints(currentProfile.id, currentProfile.email)} pts
+                      </span>
+                      <div className="text-[10px] text-gray-500 mt-0.5">
+                        Att: +{calculateScore(currentProfile.id)} | Bonus: {calculateMonthlyBonusPoints(currentProfile.id, currentProfile.email) >= 0 ? `+${calculateMonthlyBonusPoints(currentProfile.id, currentProfile.email)}` : calculateMonthlyBonusPoints(currentProfile.id, currentProfile.email)}
+                      </div>
+                    </div>
+
+                    <div className="p-2.5 bg-nyghto-dark/80 rounded-lg border border-white/10 text-center">
+                      <span className="text-[10px] text-gray-400 uppercase font-semibold block">All-Time Total</span>
+                      <span className="text-lg font-bold text-yellow-400">
+                        {calculateLifetimeTotalPoints(currentProfile.id, currentProfile.email)} pts
+                      </span>
+                      <div className="text-[10px] text-gray-500 mt-0.5">
+                        Lifetime Points
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Member's Recent Points Log */}
+                  <div className="mt-2 pt-2 border-t border-white/10">
+                    <span className="text-[10px] text-gray-400 font-semibold uppercase tracking-wider block mb-2">Recent Points Activity</span>
+                    {(() => {
+                      const memberLogs = pointRecords.filter(p => p.memberId === currentProfile.id || (currentProfile.email && p.memberEmail?.toLowerCase() === currentProfile.email.toLowerCase())).slice(0, 3);
+                      if (memberLogs.length === 0) {
+                        return (
+                          <div className="text-[11px] text-gray-500 italic py-1 text-center">
+                            No individual point bonuses or penalties yet.
+                          </div>
+                        );
+                      }
+                      return (
+                        <div className="space-y-1.5">
+                          {memberLogs.map(log => (
+                            <div key={log.id} className="text-xs p-2 bg-white/5 rounded-lg flex items-center justify-between">
+                              <div className="overflow-hidden pr-2">
+                                <span className="font-semibold text-white truncate block">{log.reason}</span>
+                                <span className="text-[10px] text-gray-400">{log.category || 'Bonus'} • {log.date}</span>
+                              </div>
+                              <span className={`font-mono font-bold text-xs shrink-0 ${log.points >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                                {log.points >= 0 ? `+${log.points}` : log.points} pts
+                              </span>
+                            </div>
+                          ))}
+                        </div>
+                      );
+                    })()}
+                  </div>
+                </div>
+
+                {isMainAdmin && (
                   <div className="mt-6 pt-4 border-t border-white/10 flex justify-end">
                     <button
                       type="button"
@@ -2896,6 +3565,189 @@ export default function Team() {
                 >
                   <ShieldCheck className="w-4 h-4" />
                   <span>{isSavingPin ? 'Updating...' : 'Update Password'}</span>
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Award / Deduct Points Modal (Admin Only) */}
+      {isAwardingPoints && isMainAdmin && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4 animate-in fade-in" onClick={() => setIsAwardingPoints(false)}>
+          <div className="glass-card w-full max-w-md p-6 rounded-2xl border border-white/20 shadow-2xl animate-in zoom-in-95" onClick={e => e.stopPropagation()}>
+            <div className="flex justify-between items-center pb-4 border-b border-white/10 mb-4">
+              <div className="flex items-center gap-2">
+                <div className="p-2 rounded-lg bg-nyghto-orange/20 text-nyghto-orange">
+                  <Award className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="font-bold text-white text-base">Award / Deduct Employee Points</h3>
+                  <span className="text-xs text-gray-400">Admin Only Access</span>
+                </div>
+              </div>
+              <button
+                onClick={() => setIsAwardingPoints(false)}
+                className="p-1.5 text-gray-400 hover:text-white rounded-lg hover:bg-white/10 transition-colors"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <form onSubmit={handleAwardPoints} className="space-y-4">
+              {/* Select Team Member */}
+              <div>
+                <label className="block text-xs font-semibold text-gray-300 uppercase tracking-wider mb-1.5">
+                  Select Employee *
+                </label>
+                <select
+                  value={pointMemberId}
+                  onChange={(e) => setPointMemberId(e.target.value)}
+                  className="w-full bg-nyghto-dark/90 border border-white/10 rounded-xl p-2.5 text-sm text-white focus:outline-none focus:border-nyghto-orange"
+                  required
+                >
+                  <option value="" disabled>-- Choose Member --</option>
+                  {teamMembers.map(m => (
+                    <option key={m.id} value={m.id}>
+                      {m.name} ({m.role})
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Action Type: Add or Deduct */}
+              <div>
+                <label className="block text-xs font-semibold text-gray-300 uppercase tracking-wider mb-1.5">
+                  Action Type *
+                </label>
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setPointType('add')}
+                    className={`py-2 rounded-xl text-xs font-bold border transition-all flex items-center justify-center gap-1.5 ${
+                      pointType === 'add'
+                        ? 'bg-green-500/20 text-green-400 border-green-500/40 shadow-sm'
+                        : 'bg-white/5 text-gray-400 border-white/10 hover:border-white/20'
+                    }`}
+                  >
+                    <span>➕ Award Points (+)</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setPointType('deduct')}
+                    className={`py-2 rounded-xl text-xs font-bold border transition-all flex items-center justify-center gap-1.5 ${
+                      pointType === 'deduct'
+                        ? 'bg-red-500/20 text-red-400 border-red-500/40 shadow-sm'
+                        : 'bg-white/5 text-gray-400 border-white/10 hover:border-white/20'
+                    }`}
+                  >
+                    <span>➖ Deduct Points (-)</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* Point Amount with Presets */}
+              <div>
+                <div className="flex justify-between items-center mb-1.5">
+                  <label className="text-xs font-semibold text-gray-300 uppercase tracking-wider">
+                    Points Amount *
+                  </label>
+                  <span className={`text-xs font-bold font-mono ${pointType === 'add' ? 'text-green-400' : 'text-red-400'}`}>
+                    {pointType === 'add' ? `+${pointAmount || 0}` : `-${pointAmount || 0}`} Points
+                  </span>
+                </div>
+                <div className="flex flex-wrap gap-1.5 mb-2">
+                  {['5', '10', '25', '50', '100'].map(amt => (
+                    <button
+                      key={amt}
+                      type="button"
+                      onClick={() => setPointAmount(amt)}
+                      className={`px-2.5 py-1 text-xs font-semibold rounded-lg border transition-all ${
+                        pointAmount === amt
+                          ? 'bg-nyghto-orange text-white border-nyghto-orange shadow-sm'
+                          : 'bg-white/5 text-gray-300 border-white/10 hover:bg-white/10'
+                      }`}
+                    >
+                      {pointType === 'add' ? `+${amt}` : `-${amt}`}
+                    </button>
+                  ))}
+                </div>
+                <input
+                  type="number"
+                  min="1"
+                  step="1"
+                  required
+                  value={pointAmount}
+                  onChange={(e) => setPointAmount(e.target.value)}
+                  placeholder="Enter point amount"
+                  className="w-full bg-nyghto-dark/90 border border-white/10 rounded-xl p-2.5 text-sm text-white focus:outline-none focus:border-nyghto-orange"
+                />
+              </div>
+
+              {/* Category */}
+              <div>
+                <label className="block text-xs font-semibold text-gray-300 uppercase tracking-wider mb-1.5">
+                  Category *
+                </label>
+                <select
+                  value={pointCategory}
+                  onChange={(e) => setPointCategory(e.target.value as any)}
+                  className="w-full bg-nyghto-dark/90 border border-white/10 rounded-xl p-2.5 text-sm text-white focus:outline-none focus:border-nyghto-orange"
+                >
+                  <option value="Task Completion">Task Completion</option>
+                  <option value="Performance Bonus">Performance Bonus</option>
+                  <option value="Overtime">Overtime / Extra Hours</option>
+                  <option value="Special Achievement">Special Achievement</option>
+                  <option value="Disciplinary">Disciplinary / Delay</option>
+                  <option value="Other">Other Reason</option>
+                </select>
+              </div>
+
+              {/* Date */}
+              <div>
+                <label className="block text-xs font-semibold text-gray-300 uppercase tracking-wider mb-1.5">
+                  Date *
+                </label>
+                <input
+                  type="date"
+                  required
+                  value={pointDate}
+                  onChange={(e) => setPointDate(e.target.value)}
+                  className="w-full bg-nyghto-dark/90 border border-white/10 rounded-xl p-2.5 text-sm text-white focus:outline-none focus:border-nyghto-orange"
+                />
+              </div>
+
+              {/* Reason Description */}
+              <div>
+                <label className="block text-xs font-semibold text-gray-300 uppercase tracking-wider mb-1.5">
+                  Reason / Note *
+                </label>
+                <textarea
+                  rows={2}
+                  required
+                  placeholder="e.g. Delivered client feature ahead of schedule..."
+                  value={pointReason}
+                  onChange={(e) => setPointReason(e.target.value)}
+                  className="w-full bg-nyghto-dark/90 border border-white/10 rounded-xl p-2.5 text-sm text-white focus:outline-none focus:border-nyghto-orange resize-none"
+                />
+              </div>
+
+              {/* Buttons */}
+              <div className="flex gap-3 pt-3 border-t border-white/10">
+                <button
+                  type="button"
+                  onClick={() => setIsAwardingPoints(false)}
+                  className="flex-1 py-2.5 bg-white/5 hover:bg-white/10 text-gray-300 rounded-xl text-xs font-semibold transition-colors border border-white/10"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={isSubmittingPoint || !pointMemberId || !pointAmount || !pointReason.trim()}
+                  className="flex-1 btn-primary py-2.5 text-xs font-bold rounded-xl shadow-lg disabled:opacity-50 flex items-center justify-center gap-1.5"
+                >
+                  <Award className="w-4 h-4" />
+                  <span>{isSubmittingPoint ? 'Saving...' : pointType === 'add' ? 'Award Points' : 'Deduct Points'}</span>
                 </button>
               </div>
             </form>

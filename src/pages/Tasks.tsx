@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Search, Plus, Filter, MoreVertical, MessageSquare, Paperclip, Clock, Calendar, Users, X, CheckCircle2, Lock, AlertTriangle, Trash2 } from 'lucide-react';
+import { Search, Plus, Filter, MoreVertical, MessageSquare, Paperclip, Clock, Calendar, Users, X, CheckCircle2, Lock, AlertTriangle, Trash2, Edit2 } from 'lucide-react';
 import { collection, onSnapshot, addDoc, updateDoc, doc, deleteDoc, serverTimestamp, getDoc } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import { useAuth } from '../contexts/AuthContext';
@@ -23,8 +23,8 @@ const formatDate = (dateStr: string) => {
   if (!dateStr || dateStr === 'Today') return 'Today';
   const parts = dateStr.split('-');
   if (parts.length === 3) {
-    const date = new Date(parseInt(parts[0]), parseInt(parts[1]) - 1, parseInt(parts[2]));
-    return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+    const d = new Date(Number(parts[0]), Number(parts[1]) - 1, Number(parts[2]));
+    return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
   }
   return dateStr;
 };
@@ -54,6 +54,16 @@ export default function Tasks() {
   const [newTaskStatus, setNewTaskStatus] = useState('To Do');
   const [newTaskAssignee, setNewTaskAssignee] = useState('u1');
   const [newTaskDueDate, setNewTaskDueDate] = useState('');
+
+  // Edit Task State for Admin
+  const [editingTask, setEditingTask] = useState<Task | null>(null);
+  const [editTaskTitle, setEditTaskTitle] = useState('');
+  const [editTaskProject, setEditTaskProject] = useState('');
+  const [editTaskPriority, setEditTaskPriority] = useState<Task['priority']>('Medium');
+  const [editTaskStatus, setEditTaskStatus] = useState<Task['status']>('To Do');
+  const [editTaskAssignee, setEditTaskAssignee] = useState('');
+  const [editTaskDueDate, setEditTaskDueDate] = useState('');
+  const [editTaskProgress, setEditTaskProgress] = useState(0);
 
   // Drag and drop state
   const [draggedTaskId, setDraggedTaskId] = useState<string | null>(null);
@@ -110,6 +120,47 @@ export default function Tasks() {
       setNewTaskDueDate('');
     } catch (error) {
       console.error("Error adding task: ", error);
+    }
+  };
+
+  const handleUpdateTask = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingTask) return;
+    if (!editTaskTitle.trim()) return;
+
+    try {
+      const clamped = Math.max(0, Math.min(100, editTaskProgress));
+      const updatePayload: any = {
+        title: editTaskTitle.trim(),
+        project: editTaskProject.trim() || 'General',
+        priority: editTaskPriority,
+        status: editTaskStatus,
+        dueDate: editTaskDueDate || 'Today',
+        assigneeId: editTaskAssignee,
+        progress: clamped
+      };
+
+      if (clamped === 100) {
+        updatePayload.status = 'Completed';
+        if (!editingTask.completedAt) {
+          updatePayload.completedAt = serverTimestamp();
+        }
+      } else if (editTaskStatus === 'Completed' && clamped < 100) {
+        updatePayload.status = 'In Progress';
+      }
+
+      await updateDoc(doc(db, 'tasks', editingTask.id), updatePayload);
+
+      await addDoc(collection(db, 'activities'), {
+        text: `${userData?.name || 'Admin'} updated task '${editTaskTitle.trim()}'`,
+        type: 'task',
+        iconColor: 'text-nyghto-orange',
+        createdAt: serverTimestamp()
+      });
+
+      setEditingTask(null);
+    } catch (error) {
+      console.error("Error updating task: ", error);
     }
   };
 
@@ -350,16 +401,37 @@ export default function Tasks() {
                     <span className={`text-xs font-medium px-2 py-0.5 rounded ${getPriorityColor(task.priority)}`}>
                       {task.priority}
                     </span>
-                    {isMainAdmin && (
-                      <button 
-                        type="button"
-                        onClick={() => promptDeleteTask({ id: task.id, title: task.title })} 
-                        className="text-theme-muted hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity p-0.5 rounded hover:bg-white/5" 
-                        title="Delete Task (Requires Password)"
-                      >
-                        <X className="w-4 h-4" />
-                      </button>
-                    )}
+                    <div className="flex items-center gap-1">
+                      {isMainAdmin && (
+                        <button 
+                          type="button"
+                          onClick={() => {
+                            setEditingTask(task);
+                            setEditTaskTitle(task.title || '');
+                            setEditTaskProject(task.project || '');
+                            setEditTaskPriority(task.priority || 'Medium');
+                            setEditTaskStatus(task.status || 'To Do');
+                            setEditTaskAssignee(task.assigneeId || 'u1');
+                            setEditTaskDueDate(task.dueDate || '');
+                            setEditTaskProgress(task.progress !== undefined ? task.progress : (task.status === 'Completed' ? 100 : task.status === 'In Progress' ? 50 : 0));
+                          }} 
+                          className="text-theme-muted hover:text-nyghto-orange opacity-0 group-hover:opacity-100 transition-opacity p-1 rounded hover:bg-white/5" 
+                          title="Edit Task (Admin)"
+                        >
+                          <Edit2 className="w-3.5 h-3.5" />
+                        </button>
+                      )}
+                      {isMainAdmin && (
+                        <button 
+                          type="button"
+                          onClick={() => promptDeleteTask({ id: task.id, title: task.title })} 
+                          className="text-theme-muted hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity p-1 rounded hover:bg-white/5" 
+                          title="Delete Task (Requires Password)"
+                        >
+                          <X className="w-4 h-4" />
+                        </button>
+                      )}
+                    </div>
                   </div>
                   
                   <h4 className={`font-medium text-sm mb-1 transition-colors ${task.status === 'Completed' ? 'text-green-500' : isPermitted ? 'group-hover:text-nyghto-orange text-theme-text' : 'text-theme-text'}`}>
@@ -705,6 +777,139 @@ export default function Tasks() {
                   className="btn-primary px-6 py-2 rounded-lg disabled:opacity-50"
                 >
                   Create Task
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Edit Task Modal for Admin */}
+      {editingTask && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center animate-in fade-in">
+          <div className="bg-theme-card w-full max-w-md p-6 rounded-2xl border border-theme-border shadow-2xl animate-in slide-in-from-bottom-4">
+            <div className="flex justify-between items-center mb-6">
+              <h2 className="text-xl font-bold text-theme-text">Edit Task</h2>
+              <button onClick={() => setEditingTask(null)} className="p-1 text-theme-muted hover:text-theme-text rounded-full hover:bg-theme-border">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            
+            <form onSubmit={handleUpdateTask} className="space-y-4 max-h-[80vh] overflow-y-auto pr-1">
+              <div>
+                <label className="block text-xs font-semibold text-theme-muted mb-1">Task Title</label>
+                <input 
+                  type="text" 
+                  value={editTaskTitle}
+                  onChange={(e) => setEditTaskTitle(e.target.value)}
+                  placeholder="Task title"
+                  className="w-full bg-theme-bg border border-theme-border rounded-lg py-2.5 px-3 text-sm text-theme-text focus:outline-none focus:border-nyghto-orange"
+                  required
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-theme-muted mb-1">Project Name</label>
+                <input 
+                  type="text" 
+                  value={editTaskProject}
+                  onChange={(e) => setEditTaskProject(e.target.value)}
+                  placeholder="E.g. Marketing Site"
+                  className="w-full bg-theme-bg border border-theme-border rounded-lg py-2.5 px-3 text-sm text-theme-text focus:outline-none focus:border-nyghto-orange"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-xs font-semibold text-theme-muted mb-1">Priority</label>
+                  <select 
+                    value={editTaskPriority}
+                    onChange={(e) => setEditTaskPriority(e.target.value as any)}
+                    className="w-full bg-theme-bg border border-theme-border rounded-lg py-2.5 px-3 text-sm text-theme-text focus:outline-none focus:border-nyghto-orange"
+                  >
+                    <option value="Low">Low</option>
+                    <option value="Medium">Medium</option>
+                    <option value="High">High</option>
+                    <option value="Critical">Critical</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-theme-muted mb-1">Status</label>
+                  <select 
+                    value={editTaskStatus}
+                    onChange={(e) => setEditTaskStatus(e.target.value as any)}
+                    className="w-full bg-theme-bg border border-theme-border rounded-lg py-2.5 px-3 text-sm text-theme-text focus:outline-none focus:border-nyghto-orange"
+                  >
+                    <option value="To Do">To Do</option>
+                    <option value="In Progress">In Progress</option>
+                    <option value="Review">Review</option>
+                    <option value="Completed">Completed</option>
+                  </select>
+                </div>
+              </div>
+
+              <div>
+                <div className="flex justify-between mb-1 text-xs font-semibold text-theme-muted">
+                  <span>Progress</span>
+                  <span className="text-nyghto-orange font-bold">{editTaskProgress}%</span>
+                </div>
+                <input 
+                  type="range" 
+                  min="0" 
+                  max="100" 
+                  step="5"
+                  value={editTaskProgress}
+                  onChange={(e) => {
+                    const val = Number(e.target.value);
+                    setEditTaskProgress(val);
+                    if (val === 100) setEditTaskStatus('Completed');
+                    else if (val === 0) setEditTaskStatus('To Do');
+                    else if (editTaskStatus === 'To Do' || editTaskStatus === 'Completed') setEditTaskStatus('In Progress');
+                  }}
+                  className="w-full accent-nyghto-orange cursor-pointer"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-xs font-semibold text-theme-muted mb-1">Due Date</label>
+                  <input 
+                    type="date" 
+                    value={editTaskDueDate}
+                    onChange={(e) => setEditTaskDueDate(e.target.value)}
+                    className="w-full bg-theme-bg border border-theme-border rounded-lg py-2.5 px-3 text-sm text-theme-text focus:outline-none focus:border-nyghto-orange"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-theme-muted mb-1">Assign To</label>
+                  <select 
+                    value={editTaskAssignee}
+                    onChange={(e) => setEditTaskAssignee(e.target.value)}
+                    className="w-full bg-theme-bg border border-theme-border rounded-lg py-2.5 px-3 text-sm text-theme-text focus:outline-none focus:border-nyghto-orange"
+                  >
+                    {teamMembers.map(member => (
+                      <option key={member.id} value={member.id}>
+                        {member.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+              
+              <div className="flex justify-end gap-3 mt-6 pt-3 border-t border-theme-border">
+                <button 
+                  type="button" 
+                  onClick={() => setEditingTask(null)}
+                  className="px-4 py-2 rounded-lg text-theme-muted hover:text-theme-text hover:bg-theme-border transition-colors font-medium text-sm"
+                >
+                  Cancel
+                </button>
+                <button 
+                  type="submit" 
+                  disabled={!editTaskTitle.trim()}
+                  className="btn-primary px-6 py-2 rounded-lg disabled:opacity-50"
+                >
+                  Save Changes
                 </button>
               </div>
             </form>

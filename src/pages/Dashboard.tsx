@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { 
   Briefcase, CheckCircle, Clock, AlertTriangle, 
-  Users, TrendingUp, DollarSign, Activity as ActivityIcon, Calendar, Plus, Target, CheckSquare
+  Users, TrendingUp, IndianRupee, Activity as ActivityIcon, Calendar, Plus, Target, CheckSquare,
+  Award, Trophy, Star
 } from 'lucide-react';
 import { 
   AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
@@ -11,10 +12,11 @@ import { collection, onSnapshot, addDoc, query, orderBy, serverTimestamp, limit 
 import { db } from '../lib/firebase';
 import { useAuth } from '../contexts/AuthContext';
 import { useTeam } from '../contexts/TeamContext';
-import type { CalendarLog, Activity, Task, Project } from '../types';
+import type { CalendarLog, Activity, Task, Project, PointRecord } from '../types';
 import { X } from 'lucide-react';
 import { doc, deleteDoc } from 'firebase/firestore';
 import { AIInsights } from '../components/AIInsights';
+import { Link } from 'react-router-dom';
 
 function StatCard({ icon: Icon, label, value, trend, trendUp }: any) {
   return (
@@ -82,6 +84,9 @@ export default function Dashboard() {
   const [projects, setProjects] = useState<Project[]>([]);
   const [showAllActivity, setShowAllActivity] = useState(false);
 
+  const [attendanceRecords, setAttendanceRecords] = useState<any[]>([]);
+  const [pointRecords, setPointRecords] = useState<PointRecord[]>([]);
+
   useEffect(() => {
     const unsubLogs = onSnapshot(query(collection(db, 'calendarLogs'), orderBy('createdAt', 'asc')), snapshot => {
       setLogs(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as CalendarLog[]);
@@ -99,11 +104,21 @@ export default function Dashboard() {
       setProjects(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as Project[]);
     });
 
+    const unsubAttendance = onSnapshot(collection(db, 'attendance'), snapshot => {
+      setAttendanceRecords(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+    });
+
+    const unsubPoints = onSnapshot(query(collection(db, 'points_history'), orderBy('createdAt', 'desc')), snapshot => {
+      setPointRecords(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as PointRecord[]);
+    });
+
     return () => {
       unsubLogs();
       unsubActivities();
       unsubTasks();
       unsubProjects();
+      unsubAttendance();
+      unsubPoints();
     };
   }, []);
 
@@ -185,9 +200,86 @@ export default function Dashboard() {
     }
   });
 
-  // User identity for My Tasks Today
-  const currentMember = teamMembers.find(m => m.email === user?.email);
+  // User identity for My Tasks Today & Points
+  const currentMember = teamMembers.find(m => m.email?.toLowerCase() === user?.email?.toLowerCase());
   const isAdmin = user?.email === 'team.nyghto@gmail.com';
+
+  // Calculate my monthly attendance score
+  const myMonthlyAttendanceScore = (() => {
+    if (!currentMember) return 0;
+    let totalMarks = 0;
+    let leavesTaken = 0;
+    for (let i = 1; i <= daysInMonth; i++) {
+      const dateStr = `${currentYear}-${String(currentMonthIndex + 1).padStart(2, '0')}-${String(i).padStart(2, '0')}`;
+      const record = attendanceRecords.find(r => r.userId === currentMember.id && r.date === dateStr);
+      const status = record?.status || 'None';
+      const isSunday = new Date(currentYear, currentMonthIndex, i).getDay() === 0;
+      if (!isSunday && status !== 'Off Day') {
+        if (status === 'Present') totalMarks += 10;
+        else if (status === 'Half Day') totalMarks += 5;
+        else if (status === 'Absent') leavesTaken++;
+      }
+    }
+    return totalMarks + (Math.min(leavesTaken, 2) * 10);
+  })();
+
+  // Calculate my monthly bonus points
+  const myMonthlyBonus = (() => {
+    if (!currentMember && !user?.email) return 0;
+    const ym = `${currentYear}-${String(currentMonthIndex + 1).padStart(2, '0')}`;
+    return pointRecords
+      .filter(p => (currentMember && p.memberId === currentMember.id) || (user?.email && p.memberEmail?.toLowerCase() === user.email.toLowerCase()))
+      .filter(p => p.date?.startsWith(ym))
+      .reduce((sum, curr) => sum + (Number(curr.points) || 0), 0);
+  })();
+
+  const myMonthlyTotalPoints = myMonthlyAttendanceScore + myMonthlyBonus;
+
+  // Calculate my all-time lifetime points
+  const myLifetimeTotalPoints = (() => {
+    if (!currentMember) return 0;
+    const memberAttendance = attendanceRecords.filter(r => r.userId === currentMember.id);
+    const monthGroups: Record<string, { year: number; month: number }> = {};
+    memberAttendance.forEach(rec => {
+      if (rec.date && typeof rec.date === 'string') {
+        const parts = rec.date.split('-');
+        if (parts.length >= 2) {
+          const ym = `${parts[0]}-${parts[1]}`;
+          if (!monthGroups[ym]) {
+            monthGroups[ym] = { year: parseInt(parts[0]), month: parseInt(parts[1]) - 1 };
+          }
+        }
+      }
+    });
+    const curYm = `${currentYear}-${String(currentMonthIndex + 1).padStart(2, '0')}`;
+    if (!monthGroups[curYm]) monthGroups[curYm] = { year: currentYear, month: currentMonthIndex };
+
+    let lifetimeAtt = 0;
+    Object.values(monthGroups).forEach(({ year, month }) => {
+      const dInM = new Date(year, month + 1, 0).getDate();
+      let mMarks = 0;
+      let mLeaves = 0;
+      for (let d = 1; d <= dInM; d++) {
+        const dStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+        const rec = attendanceRecords.find(r => r.userId === currentMember.id && r.date === dStr);
+        const st = rec?.status || 'None';
+        const isSun = new Date(year, month, d).getDay() === 0;
+        if (!isSun && st !== 'Off Day') {
+          if (st === 'Present') mMarks += 10;
+          else if (st === 'Half Day') mMarks += 5;
+          else if (st === 'Absent') mLeaves++;
+        }
+      }
+      lifetimeAtt += mMarks + (Math.min(mLeaves, 2) * 10);
+    });
+
+    const totalBonus = pointRecords
+      .filter(p => p.memberId === currentMember.id || (user?.email && p.memberEmail?.toLowerCase() === user.email.toLowerCase()))
+      .reduce((sum, curr) => sum + (Number(curr.points) || 0), 0);
+
+    return lifetimeAtt + totalBonus;
+  })();
+
 
   // Derived Upcoming Tasks
   const upcomingTasks = tasks
@@ -247,16 +339,39 @@ export default function Dashboard() {
       </div>
       
       {/* Top Stats */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
         <StatCard icon={Briefcase} label="Active Projects" value={activeProjects.toString()} trend="14" trendUp={true} />
         <StatCard icon={CheckCircle} label="Completed Projects" value={completedProjects.toString()} trend="8" trendUp={true} />
         <StatCard icon={AlertTriangle} label="Critical Tasks" value={overdueTasks.toString()} trend="12" trendUp={false} />
         
+        {/* My Performance Points Card */}
+        <Link to="/team" className="glass-card p-5 flex flex-col justify-between hover:border-yellow-500/50 hover-scale transition-all group relative overflow-hidden">
+          <div className="flex justify-between items-start">
+            <div className="p-2.5 bg-yellow-500/10 rounded-lg border border-yellow-500/20 text-yellow-400 group-hover:bg-yellow-500/20 transition-colors">
+              <Trophy className="w-5 h-5" />
+            </div>
+            <span className="text-[10px] bg-yellow-500/20 text-yellow-300 font-bold px-2 py-0.5 rounded-full border border-yellow-500/30">
+              Live Score
+            </span>
+          </div>
+          <div className="mt-2">
+            <h3 className="text-theme-muted text-xs font-semibold mb-0.5">My Points ({monthName.split(' ')[0]})</h3>
+            <div className="text-2xl font-bold text-yellow-400 flex items-center gap-1.5">
+              <span>{myMonthlyTotalPoints}</span>
+              <span className="text-xs font-medium text-theme-muted">pts</span>
+            </div>
+            <div className="text-[11px] text-theme-muted mt-1 flex items-center justify-between">
+              <span>Total: <b className="text-theme-text">{myLifetimeTotalPoints} pts</b></span>
+              <span className="text-nyghto-orange group-hover:translate-x-0.5 transition-transform text-[10px]">Leaderboard &rarr;</span>
+            </div>
+          </div>
+        </Link>
+
         {/* Motivational Quote */}
-        <div className="glass-card p-6 flex flex-col items-center justify-center hover-scale text-center relative overflow-hidden group">
+        <div className="glass-card p-5 flex flex-col items-center justify-center hover-scale text-center relative overflow-hidden group">
           <div className="absolute inset-0 bg-gradient-to-br from-nyghto-orange/5 to-transparent pointer-events-none" />
-          <h3 className="text-theme-muted text-xs font-bold uppercase tracking-widest mb-3 opacity-70">Daily Motivation</h3>
-          <p className="text-sm font-medium text-theme-text italic leading-relaxed px-2">"{dailyQuote}"</p>
+          <h3 className="text-theme-muted text-xs font-bold uppercase tracking-widest mb-2 opacity-70">Daily Motivation</h3>
+          <p className="text-xs font-medium text-theme-text italic leading-relaxed px-1">"{dailyQuote}"</p>
         </div>
       </div>
 
