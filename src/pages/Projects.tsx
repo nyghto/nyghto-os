@@ -38,6 +38,28 @@ const getPriorityColor = (priority: string) => {
   }
 };
 
+const formatDueDate = (dateStr?: string) => {
+  if (!dateStr || dateStr === 'Today') return 'Today';
+  const parts = dateStr.split('-');
+  if (parts.length === 3) {
+    const d = new Date(Number(parts[0]), Number(parts[1]) - 1, Number(parts[2]));
+    if (!isNaN(d.getTime())) {
+      return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+    }
+  }
+  try {
+    const d = new Date(dateStr);
+    if (!isNaN(d.getTime())) {
+      return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+    }
+  } catch (e) {}
+  return dateStr;
+};
+
+const getLocalDateStr = (d = new Date()) => {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+};
+
 export default function Projects() {
   const { userData, user } = useAuth();
   const isMainAdmin = isSuperAdmin(user?.email);
@@ -85,6 +107,7 @@ export default function Projects() {
   const [editPriority, setEditPriority] = useState<Project['priority']>('Medium');
   const [editProgress, setEditProgress] = useState(0);
   const [editStatus, setEditStatus] = useState<Project['status']>('Planning');
+  const [editStartDate, setEditStartDate] = useState('');
   const [editDueDate, setEditDueDate] = useState('');
   const [editBudget, setEditBudget] = useState<number | ''>('');
   const [editAdvance, setEditAdvance] = useState<number | ''>('');
@@ -99,6 +122,7 @@ export default function Projects() {
   const [client, setClient] = useState('');
   const [category, setCategory] = useState('');
   const [status, setStatus] = useState<'Planning' | 'In Progress' | 'On Hold' | 'Completed'>('Planning');
+  const [startDate, setStartDate] = useState(getLocalDateStr());
   const [dueDate, setDueDate] = useState('');
   const [priority, setPriority] = useState<'Low' | 'Medium' | 'High' | 'Critical'>('Medium');
   const [budget, setBudget] = useState<number | ''>('');
@@ -121,7 +145,7 @@ export default function Projects() {
   const [withdrawAmount, setWithdrawAmount] = useState<number | ''>('');
   const [withdrawReason, setWithdrawReason] = useState('');
   const [withdrawCategory, setWithdrawCategory] = useState('Office & Operational');
-  const [withdrawDate, setWithdrawDate] = useState(new Date().toISOString().split('T')[0]);
+  const [withdrawDate, setWithdrawDate] = useState(getLocalDateStr());
   const [withdrawError, setWithdrawError] = useState('');
   const [isSubmittingWithdraw, setIsSubmittingWithdraw] = useState(false);
   const [showAllFinanceCards, setShowAllFinanceCards] = useState(false);
@@ -270,6 +294,7 @@ export default function Projects() {
         category,
         status,
         progress: 0,
+        startDate: startDate || getLocalDateStr(),
         dueDate,
         priority,
         budget: Number(budget) || 0,
@@ -293,6 +318,7 @@ export default function Projects() {
       setClient('');
       setCategory('');
       setStatus('Planning');
+      setStartDate(getLocalDateStr());
       setDueDate('');
       setPriority('Medium');
       setBudget('');
@@ -382,6 +408,9 @@ export default function Projects() {
         status: editStatus,
         dueDate: editDueDate
       };
+      if (editStartDate) {
+        updateData.startDate = editStartDate;
+      }
 
       if (isMainAdmin) {
         if (editName.trim()) updateData.name = editName.trim();
@@ -430,7 +459,7 @@ export default function Projects() {
         amount: amt,
         reason: withdrawReason.trim(),
         category: withdrawCategory,
-        date: withdrawDate || new Date().toISOString().split('T')[0],
+        date: withdrawDate || getLocalDateStr(),
         withdrawnBy: userData?.name || user?.email || 'Admin',
         withdrawnByEmail: user?.email || '',
         createdAt: serverTimestamp()
@@ -516,6 +545,7 @@ export default function Projects() {
                     setEditPriority(project.priority || 'Medium');
                     setEditProgress(project.progress || 0);
                     setEditStatus(project.status || 'Planning');
+                    setEditStartDate(project.startDate || (project.createdAt ? getLocalDateStr(new Date((project.createdAt as any).seconds ? (project.createdAt as any).seconds * 1000 : project.createdAt)) : getLocalDateStr()));
                     setEditDueDate(project.dueDate || '');
                     setEditBudget(project.budget !== undefined ? project.budget : '');
                     setEditAdvance(project.advance !== undefined ? project.advance : '');
@@ -719,10 +749,18 @@ export default function Projects() {
               </div>
             )}
           </div>
-          <div className="text-right">
-            <div className="text-xs text-gray-500 mb-0.5">Due Date</div>
-            <div className={`text-sm font-medium ${getPriorityColor(project.priority)}`}>
-              {new Date(project.dueDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+          <div className="flex items-center gap-4 text-right">
+            <div className="text-left">
+              <div className="text-[10px] text-gray-500 mb-0.5 uppercase tracking-wider">Started</div>
+              <div className="text-xs font-medium text-gray-300">
+                {formatDueDate(project.startDate || (project.createdAt ? getLocalDateStr(new Date((project.createdAt as any).seconds ? (project.createdAt as any).seconds * 1000 : project.createdAt)) : undefined))}
+              </div>
+            </div>
+            <div>
+              <div className="text-[10px] text-gray-500 mb-0.5 uppercase tracking-wider">Due Date</div>
+              <div className={`text-xs font-medium ${getPriorityColor(project.priority)}`}>
+                {formatDueDate(project.dueDate)}
+              </div>
             </div>
           </div>
         </div>
@@ -1200,6 +1238,15 @@ export default function Projects() {
               
               <div className="grid grid-cols-2 gap-4">
                 <div>
+                  <label className="block text-sm font-medium text-gray-400 mb-1">Started Date</label>
+                  <input 
+                    type="date" 
+                    value={startDate}
+                    onChange={e => setStartDate(e.target.value)}
+                    className="w-full bg-nyghto-dark border border-white/10 rounded-lg py-2 px-3 text-white focus:outline-none focus:border-nyghto-orange" 
+                  />
+                </div>
+                <div>
                   <label className="block text-sm font-medium text-gray-400 mb-1">Due Date</label>
                   <input 
                     type="date" 
@@ -1209,19 +1256,20 @@ export default function Projects() {
                     className="w-full bg-nyghto-dark border border-white/10 rounded-lg py-2 px-3 text-white focus:outline-none focus:border-nyghto-orange" 
                   />
                 </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-400 mb-1">Priority</label>
-                  <select 
-                    value={priority}
-                    onChange={e => setPriority(e.target.value as any)}
-                    className="w-full bg-nyghto-dark border border-white/10 rounded-lg py-2 px-3 text-white focus:outline-none focus:border-nyghto-orange appearance-none"
-                  >
-                    <option value="Low">Low</option>
-                    <option value="Medium">Medium</option>
-                    <option value="High">High</option>
-                    <option value="Critical">Critical</option>
-                  </select>
-                </div>
+              </div>
+              
+              <div>
+                <label className="block text-sm font-medium text-gray-400 mb-1">Priority</label>
+                <select 
+                  value={priority}
+                  onChange={e => setPriority(e.target.value as any)}
+                  className="w-full bg-nyghto-dark border border-white/10 rounded-lg py-2 px-3 text-white focus:outline-none focus:border-nyghto-orange appearance-none"
+                >
+                  <option value="Low">Low</option>
+                  <option value="Medium">Medium</option>
+                  <option value="High">High</option>
+                  <option value="Critical">Critical</option>
+                </select>
               </div>
 
               <div>
@@ -1446,7 +1494,7 @@ export default function Projects() {
                 />
               </div>
 
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-3 gap-4">
                 <div>
                   <label className="block text-sm font-medium text-gray-400 mb-1">Status</label>
                   <select 
@@ -1459,6 +1507,15 @@ export default function Projects() {
                     <option value="On Hold">On Hold</option>
                     <option value="Completed">Completed</option>
                   </select>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-400 mb-1">Started Date</label>
+                  <input 
+                    type="date" 
+                    value={editStartDate}
+                    onChange={e => setEditStartDate(e.target.value)}
+                    className="w-full bg-nyghto-dark border border-white/10 rounded-lg py-2 px-3 text-white focus:outline-none focus:border-nyghto-orange" 
+                  />
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-400 mb-1">Due Date</label>
@@ -1869,7 +1926,7 @@ export default function Projects() {
                           </span>
                         )}
                         <span className="text-[11px] text-gray-500">
-                          {w.date ? new Date(w.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : 'Recent'}
+                          {w.date ? formatDueDate(w.date) : 'Recent'}
                         </span>
                       </div>
                       <div className="text-xs text-gray-200 font-medium leading-relaxed">

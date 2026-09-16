@@ -40,6 +40,10 @@ const formatTimestamp = (ts: any) => {
   }
 };
 
+const getLocalDateStr = (d = new Date()) => {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+};
+
 export default function Tasks() {
   const { user, userData } = useAuth();
   const isMainAdmin = isSuperAdmin(user?.email);
@@ -53,6 +57,7 @@ export default function Tasks() {
   const [newTaskPriority, setNewTaskPriority] = useState<Task['priority']>('Medium');
   const [newTaskStatus, setNewTaskStatus] = useState('To Do');
   const [newTaskAssignee, setNewTaskAssignee] = useState('u1');
+  const [newTaskStartDate, setNewTaskStartDate] = useState(getLocalDateStr());
   const [newTaskDueDate, setNewTaskDueDate] = useState('');
 
   // Edit Task State for Admin
@@ -62,6 +67,7 @@ export default function Tasks() {
   const [editTaskPriority, setEditTaskPriority] = useState<Task['priority']>('Medium');
   const [editTaskStatus, setEditTaskStatus] = useState<Task['status']>('To Do');
   const [editTaskAssignee, setEditTaskAssignee] = useState('');
+  const [editTaskStartDate, setEditTaskStartDate] = useState('');
   const [editTaskDueDate, setEditTaskDueDate] = useState('');
   const [editTaskProgress, setEditTaskProgress] = useState(0);
 
@@ -100,6 +106,7 @@ export default function Tasks() {
         priority: newTaskPriority,
         status: newTaskStatus,
         assigneeId: newTaskAssignee,
+        startDate: newTaskStartDate || getLocalDateStr(),
         dueDate: newTaskDueDate || 'Today',
         comments: 0,
         attachments: 0,
@@ -117,6 +124,7 @@ export default function Tasks() {
       setNewTaskTitle('');
       setNewTaskProject('');
       setNewTaskPriority('Medium');
+      setNewTaskStartDate(getLocalDateStr());
       setNewTaskDueDate('');
     } catch (error) {
       console.error("Error adding task: ", error);
@@ -139,6 +147,10 @@ export default function Tasks() {
         assigneeId: editTaskAssignee,
         progress: clamped
       };
+
+      if (editTaskStartDate) {
+        updatePayload.startDate = editTaskStartDate;
+      }
 
       if (clamped === 100) {
         updatePayload.status = 'Completed';
@@ -412,6 +424,7 @@ export default function Tasks() {
                             setEditTaskPriority(task.priority || 'Medium');
                             setEditTaskStatus(task.status || 'To Do');
                             setEditTaskAssignee(task.assigneeId || 'u1');
+                            setEditTaskStartDate(task.startDate || (task.createdAt ? getLocalDateStr(new Date((task.createdAt as any).seconds ? (task.createdAt as any).seconds * 1000 : task.createdAt)) : getLocalDateStr()));
                             setEditTaskDueDate(task.dueDate || '');
                             setEditTaskProgress(task.progress !== undefined ? task.progress : (task.status === 'Completed' ? 100 : task.status === 'In Progress' ? 50 : 0));
                           }} 
@@ -540,11 +553,11 @@ export default function Tasks() {
                   })()}
                   
                   <div className="flex flex-col gap-2 pt-3 border-t border-theme-border">
-                    {/* Dates Bar: Added Date & Completed/Due Status */}
+                    {/* Dates Bar: Added/Started Date & Completed/Due Status */}
                     <div className="flex items-center justify-between text-[11px] text-theme-muted gap-2">
-                      <div className="flex items-center gap-1 text-gray-400" title="Date task was created">
+                      <div className="flex items-center gap-1 text-gray-400" title="Started Date">
                         <Clock className="w-3 h-3 text-gray-500" />
-                        <span>Added: {formatTimestamp(task.createdAt) || 'Recent'}</span>
+                        <span>Start: {formatDate(task.startDate || (task.createdAt ? getLocalDateStr(new Date((task.createdAt as any).seconds ? (task.createdAt as any).seconds * 1000 : task.createdAt)) : 'Today'))}</span>
                       </div>
 
                       {task.status === 'Completed' ? (
@@ -739,6 +752,15 @@ export default function Tasks() {
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div>
+                  <label className="block text-xs font-semibold text-theme-muted mb-1">Started Date</label>
+                  <input 
+                    type="date" 
+                    value={newTaskStartDate}
+                    onChange={(e) => setNewTaskStartDate(e.target.value)}
+                    className="w-full bg-theme-bg border border-theme-border rounded-lg py-2.5 px-3 text-sm text-theme-text focus:outline-none focus:border-nyghto-orange"
+                  />
+                </div>
+                <div>
                   <label className="block text-xs font-semibold text-theme-muted mb-1">Due Date</label>
                   <input 
                     type="date" 
@@ -747,8 +769,8 @@ export default function Tasks() {
                     className="w-full bg-theme-bg border border-theme-border rounded-lg py-2.5 px-3 text-sm text-theme-text focus:outline-none focus:border-nyghto-orange"
                   />
                 </div>
-                <div>
-                  <label className="block text-xs font-semibold text-theme-muted mb-1">Assign To</label>
+              <div>
+                <label className="block text-xs font-semibold text-theme-muted mb-1">Assign To</label>
                   <select 
                     value={newTaskAssignee}
                     onChange={(e) => setNewTaskAssignee(e.target.value)}
@@ -872,6 +894,15 @@ export default function Tasks() {
 
               <div className="grid grid-cols-2 gap-4">
                 <div>
+                  <label className="block text-xs font-semibold text-theme-muted mb-1">Started Date</label>
+                  <input 
+                    type="date" 
+                    value={editTaskStartDate}
+                    onChange={(e) => setEditTaskStartDate(e.target.value)}
+                    className="w-full bg-theme-bg border border-theme-border rounded-lg py-2.5 px-3 text-sm text-theme-text focus:outline-none focus:border-nyghto-orange"
+                  />
+                </div>
+                <div>
                   <label className="block text-xs font-semibold text-theme-muted mb-1">Due Date</label>
                   <input 
                     type="date" 
@@ -880,8 +911,10 @@ export default function Tasks() {
                     className="w-full bg-theme-bg border border-theme-border rounded-lg py-2.5 px-3 text-sm text-theme-text focus:outline-none focus:border-nyghto-orange"
                   />
                 </div>
-                <div>
-                  <label className="block text-xs font-semibold text-theme-muted mb-1">Assign To</label>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-theme-muted mb-1">Assign To</label>
                   <select 
                     value={editTaskAssignee}
                     onChange={(e) => setEditTaskAssignee(e.target.value)}
@@ -893,7 +926,6 @@ export default function Tasks() {
                       </option>
                     ))}
                   </select>
-                </div>
               </div>
               
               <div className="flex justify-end gap-3 mt-6 pt-3 border-t border-theme-border">

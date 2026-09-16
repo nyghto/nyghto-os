@@ -443,8 +443,8 @@ export default function Analytics() {
                 <YAxis stroke="#666" axisLine={false} tickLine={false} />
                 <Tooltip contentStyle={{ backgroundColor: '#161616', borderColor: '#2A2A2A', borderRadius: '8px' }} />
                 <Legend />
-                <Area type="monotone" dataKey="current" name="2026" stroke="#FF6B00" fillOpacity={1} fill="url(#colorCurrent)" />
-                <Area type="monotone" dataKey="previous" name="2025" stroke="#666" fill="transparent" strokeDasharray="5 5" />
+                <Area type="monotone" dataKey="current" name={currentYear.toString()} stroke="#FF6B00" fillOpacity={1} fill="url(#colorCurrent)" />
+                <Area type="monotone" dataKey="previous" name={(currentYear - 1).toString()} stroke="#666" fill="transparent" strokeDasharray="5 5" />
               </AreaChart>
             </ResponsiveContainer>
           </div>

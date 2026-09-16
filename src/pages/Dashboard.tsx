@@ -60,6 +60,14 @@ const formatActivityText = (text: string) => {
 
 const formatTaskDate = (dateString: string) => {
   if (!dateString || dateString === 'Today') return dateString;
+  const parts = dateString.split('-');
+  if (parts.length === 3) {
+    const d = new Date(Number(parts[0]), Number(parts[1]) - 1, Number(parts[2]));
+    if (!isNaN(d.getTime())) {
+      const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+      return `${months[d.getMonth()]} ${d.getDate()} ${d.getFullYear()}`;
+    }
+  }
   try {
     const date = new Date(dateString);
     if (isNaN(date.getTime())) return dateString;
@@ -68,6 +76,10 @@ const formatTaskDate = (dateString: string) => {
   } catch (e) {
     return dateString;
   }
+};
+
+const getLocalDateStr = (d = new Date()) => {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 };
 
 export default function Dashboard() {
@@ -475,7 +487,7 @@ export default function Dashboard() {
                       <p className="text-xs text-theme-muted mt-0.5">{task.project}</p>
                     </div>
                   </div>
-                  <div className="flex flex-col items-end">
+                  <div className="flex flex-col items-end text-right">
                     <span className={`text-[10px] px-2 py-1 rounded-full font-bold mb-1
                       ${task.priority === 'Critical' ? 'bg-red-500/20 text-red-500' : 
                         task.priority === 'High' ? 'bg-orange-500/20 text-orange-500' : 
@@ -483,7 +495,10 @@ export default function Dashboard() {
                         'bg-green-500/20 text-green-500'}`}>
                       {task.priority}
                     </span>
-                    <span className="text-xs text-theme-muted font-medium">{formatTaskDate(task.dueDate)}</span>
+                    <span className="text-[10px] text-theme-muted">
+                      Start: {formatTaskDate(task.startDate || (task.createdAt ? getLocalDateStr(new Date((task.createdAt as any).seconds ? (task.createdAt as any).seconds * 1000 : task.createdAt)) : 'Today'))}
+                    </span>
+                    <span className="text-xs text-theme-muted font-medium">Due: {formatTaskDate(task.dueDate)}</span>
                   </div>
                 </div>
                 );
@@ -538,7 +553,10 @@ export default function Dashboard() {
                         'bg-green-500/20 text-green-500'}`}>
                       {item.priority}
                     </div>
-                    <p className="text-[10px] text-theme-muted block">{formatTaskDate(item.dueDate)}</p>
+                    <p className="text-[9px] text-theme-muted block">
+                      Start: {formatTaskDate(item.startDate || (item.createdAt ? getLocalDateStr(new Date((item.createdAt as any).seconds ? (item.createdAt as any).seconds * 1000 : item.createdAt)) : 'Today'))}
+                    </p>
+                    <p className="text-[10px] text-theme-muted block font-medium">Due: {formatTaskDate(item.dueDate)}</p>
                   </div>
                 </div>
                 );

@@ -19,6 +19,10 @@ const COLOR_PRESETS = [
   { id: 'indigo', name: 'Indigo', bg: 'bg-indigo-500/20', text: 'text-indigo-400', border: 'border-indigo-500/30', dot: '#6366f1' },
 ];
 
+const getLocalDateStr = (d = new Date()) => {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+};
+
 export default function Team() {
   const { userData, user } = useAuth();
   const { teamMembers, updateMemberAvatar } = useTeam();
@@ -102,7 +106,7 @@ export default function Team() {
   const [pointType, setPointType] = useState<'add' | 'deduct'>('add');
   const [pointCategory, setPointCategory] = useState<'Task Completion' | 'Performance Bonus' | 'Overtime' | 'Special Achievement' | 'Disciplinary' | 'Other'>('Performance Bonus');
   const [pointReason, setPointReason] = useState('');
-  const [pointDate, setPointDate] = useState(new Date().toISOString().split('T')[0]);
+  const [pointDate, setPointDate] = useState(getLocalDateStr());
   const [isSubmittingPoint, setIsSubmittingPoint] = useState(false);
   const [pointsLeaderboardFilter, setPointsLeaderboardFilter] = useState<'monthly' | 'total'>('monthly');
 
@@ -112,7 +116,7 @@ export default function Team() {
   const [reportDescription, setReportDescription] = useState('');
   const [hours, setHours] = useState('8');
   const [tasksDone, setTasksDone] = useState('1');
-  const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
+  const [date, setDate] = useState(getLocalDateStr());
 
   // Load Office Location from Firestore
   useEffect(() => {
@@ -1046,7 +1050,7 @@ export default function Team() {
               <div>
                 <div className="text-2xl font-bold">
                   {(() => {
-                    const todayStr = new Date().toISOString().split('T')[0];
+                    const todayStr = getLocalDateStr();
                     const todayReports = reports.filter(r => r.date === todayStr);
                     const uniqueSubmitters = new Set(todayReports.map(r => r.employeeId)).size;
                     const totalTeam = teamMembers.length;
@@ -1478,7 +1482,7 @@ export default function Team() {
               <tbody className="divide-y divide-white/5">
                 {daysArray.map(day => {
                   const dateStr = `${attendanceYear}-${String(attendanceMonth + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
-                  const isToday = dateStr === new Date().toISOString().split('T')[0];
+                  const isToday = dateStr === getLocalDateStr();
                   
                   return (
                     <tr key={day} className={`hover:bg-white/5 transition-colors ${isToday ? 'bg-nyghto-orange/5' : ''}`}>

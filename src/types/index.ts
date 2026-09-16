@@ -13,6 +13,7 @@ export interface Task {
   priority: 'Low' | 'Medium' | 'High' | 'Critical';
   status: 'To Do' | 'In Progress' | 'Review' | 'Completed';
   progress?: number;
+  startDate?: string;
   dueDate: string;
   comments: number;
   attachments: number;
@@ -38,6 +39,7 @@ export interface Project {
   category: string;
   status: 'Planning' | 'In Progress' | 'On Hold' | 'Completed';
   progress: number;
+  startDate?: string;
   dueDate: string;
   priority: 'Low' | 'Medium' | 'High' | 'Critical';
   team: string[];
