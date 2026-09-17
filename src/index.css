@@ -39,11 +39,17 @@
   }
 }
 
-html {
-  zoom: 90%;
-  -moz-transform: scale(0.9);
-  -moz-transform-origin: 0 0;
+@media (min-width: 1024px) {
+  html {
+    zoom: 90%;
+    -moz-transform: scale(0.9);
+    -moz-transform-origin: 0 0;
+  }
+}
+
+html, body {
   overflow-x: hidden;
+  max-width: 100%;
 }
 
 body {

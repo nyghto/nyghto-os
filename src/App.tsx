@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { BrowserRouter, Routes, Route, Link, useLocation, Navigate } from 'react-router-dom';
-import { LayoutDashboard, FolderKanban, CheckSquare, Users, BarChart3, Settings, Bell, Search, LogOut, Sun, Moon, X, Palette, PenTool, Key, Lock, CheckCircle2, ShieldCheck, Trash2, Award, Calendar } from 'lucide-react';
+import { LayoutDashboard, FolderKanban, CheckSquare, Users, BarChart3, Settings, Bell, Search, LogOut, Sun, Moon, X, Palette, PenTool, Key, Lock, CheckCircle2, ShieldCheck, Trash2, Award, Calendar, Menu } from 'lucide-react';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { ThemeProvider, useTheme, THEME_COLORS } from './contexts/ThemeContext';
 import type { ThemeColorName } from './contexts/ThemeContext';
@@ -20,7 +20,7 @@ import Schedules from './pages/Schedules';
 import Login from './pages/Login';
 import { motion, AnimatePresence } from 'framer-motion';
 
-function Sidebar() {
+function Sidebar({ isOpen, onClose }: { isOpen?: boolean; onClose?: () => void }) {
   const location = useLocation();
   const { user, userData, logout } = useAuth();
   
@@ -175,23 +175,45 @@ function Sidebar() {
 
   return (
     <>
-      <div className="w-64 h-screen glass-card rounded-none border-y-0 border-l-0 flex flex-col p-4 fixed left-0 top-0 z-50">
-        <div className="flex items-center gap-3 mb-10 px-2 mt-4">
-          <div className="w-8 h-8 rounded bg-gradient-to-br from-nyghto-orange to-nyghto-yellow flex items-center justify-center font-bold text-white shadow-[0_0_15px_rgba(255,107,0,0.5)]">
-            N
+      {/* Mobile Backdrop */}
+      {isOpen && (
+        <div 
+          onClick={onClose}
+          className="fixed inset-0 bg-black/60 backdrop-blur-sm z-40 md:hidden animate-in fade-in duration-200"
+        />
+      )}
+
+      <div className={`w-64 h-screen glass-card rounded-none border-y-0 border-l-0 flex flex-col p-4 fixed left-0 top-0 z-50 transition-transform duration-300 ease-in-out md:translate-x-0 ${
+        isOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'
+      }`}>
+        <div className="flex items-center justify-between mb-10 px-2 mt-4">
+          <div className="flex items-center gap-3">
+            <div className="w-8 h-8 rounded bg-gradient-to-br from-nyghto-orange to-nyghto-yellow flex items-center justify-center font-bold text-white shadow-[0_0_15px_rgba(255,107,0,0.5)]">
+              N
+            </div>
+            <span className="text-xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-theme-text to-theme-muted">
+              Nyghto OS
+            </span>
           </div>
-          <span className="text-xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-theme-text to-theme-muted">
-            Nyghto OS
-          </span>
+          {onClose && (
+            <button 
+              onClick={onClose}
+              className="p-1 text-theme-muted hover:text-theme-text rounded md:hidden"
+              title="Close menu"
+            >
+              <X className="w-5 h-5" />
+            </button>
+          )}
         </div>
         
-        <nav className="flex flex-col gap-2 flex-1">
+        <nav className="flex flex-col gap-2 flex-1 overflow-y-auto custom-scrollbar">
           {navItems.map((item) => {
             const isActive = location.pathname === item.path;
             return (
               <Link
                 key={item.path}
                 to={item.path}
+                onClick={onClose}
                 className={`flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-300 group ${
                   isActive 
                     ? 'bg-gradient-to-r from-nyghto-orange/20 to-transparent text-nyghto-orange border-l-[3px] border-nyghto-orange shadow-[inset_4px_0_10px_rgba(255,107,0,0.1)]' 
@@ -420,7 +442,7 @@ function Sidebar() {
   );
 }
 
-function Header() {
+function Header({ onOpenMobileMenu }: { onOpenMobileMenu?: () => void }) {
   const { user } = useAuth();
   const { theme, toggleTheme, accentColor, setAccentColor } = useTheme();
   const [isNotificationsOpen, setIsNotificationsOpen] = useState(false);
@@ -444,14 +466,25 @@ function Header() {
   };
 
   return (
-    <header className="h-20 border-b border-theme-border glass-card rounded-none flex items-center justify-between px-8 sticky top-0 z-40 bg-theme-bg/80 backdrop-blur-xl transition-colors duration-300">
-      <div className="relative w-96">
-        <Search className="w-5 h-5 text-theme-muted absolute left-3 top-1/2 -translate-y-1/2" />
-        <input 
-          type="text" 
-          placeholder="Search projects, tasks, or clients..." 
-          className="w-full bg-theme-card border border-theme-border rounded-xl py-2 pl-10 pr-4 text-sm text-theme-text placeholder-theme-muted focus:outline-none focus:border-nyghto-orange transition-colors"
-        />
+    <header className="h-20 border-b border-theme-border glass-card rounded-none flex items-center justify-between px-4 sm:px-8 sticky top-0 z-30 bg-theme-bg/80 backdrop-blur-xl transition-colors duration-300 gap-2">
+      <div className="flex items-center gap-3 flex-1 max-w-lg">
+        {onOpenMobileMenu && (
+          <button
+            onClick={onOpenMobileMenu}
+            className="p-2 -ml-1 text-theme-muted hover:text-theme-text rounded-lg hover:bg-theme-border md:hidden shrink-0"
+            title="Open navigation menu"
+          >
+            <Menu className="w-6 h-6" />
+          </button>
+        )}
+        <div className="relative w-full max-w-[220px] sm:max-w-xs md:w-96">
+          <Search className="w-4 h-4 sm:w-5 sm:h-5 text-theme-muted absolute left-3 top-1/2 -translate-y-1/2" />
+          <input 
+            type="text" 
+            placeholder="Search..." 
+            className="w-full bg-theme-card border border-theme-border rounded-xl py-2 pl-9 sm:pl-10 pr-3 sm:pr-4 text-xs sm:text-sm text-theme-text placeholder-theme-muted focus:outline-none focus:border-nyghto-orange transition-colors"
+          />
+        </div>
       </div>
       <div className="flex items-center gap-4">
         <button 
@@ -549,6 +582,12 @@ function Header() {
 function Layout({ children }: { children: React.ReactNode }) {
   const location = useLocation();
   const [scrollProgress, setScrollProgress] = useState(0);
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+
+  // Close mobile menu on route change
+  useEffect(() => {
+    setIsMobileMenuOpen(false);
+  }, [location.pathname]);
 
   // Track window scroll
   useEffect(() => {
@@ -579,10 +618,10 @@ function Layout({ children }: { children: React.ReactNode }) {
       </div>
       
       <div className="min-h-screen flex bg-transparent text-theme-text transition-colors duration-300 relative z-0">
-        <Sidebar />
-        <div className="flex-1 ml-64 flex flex-col min-h-screen">
-          <Header />
-          <main className="flex-1 px-5 py-5 lg:px-7 lg:py-6 overflow-y-auto overflow-x-hidden relative scroll-smooth">
+        <Sidebar isOpen={isMobileMenuOpen} onClose={() => setIsMobileMenuOpen(false)} />
+        <div className="flex-1 ml-0 md:ml-64 flex flex-col min-h-screen min-w-0 transition-[margin] duration-300">
+          <Header onOpenMobileMenu={() => setIsMobileMenuOpen(true)} />
+          <main className="flex-1 px-3 py-4 sm:px-5 sm:py-5 lg:px-7 lg:py-6 overflow-y-auto overflow-x-hidden relative scroll-smooth">
             {/* Scroll Progress Bar ONLY for Whiteboard */}
             {location.pathname === '/whiteboard' && (
               <div className="fixed right-0 top-0 bottom-0 w-1.5 bg-theme-border/50 z-50">
