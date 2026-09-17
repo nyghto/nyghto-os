@@ -582,7 +582,7 @@ function Layout({ children }: { children: React.ReactNode }) {
         <Sidebar />
         <div className="flex-1 ml-64 flex flex-col min-h-screen">
           <Header />
-          <main className="flex-1 p-8 overflow-y-auto overflow-x-hidden relative scroll-smooth">
+          <main className="flex-1 px-5 py-5 lg:px-7 lg:py-6 overflow-y-auto overflow-x-hidden relative scroll-smooth">
             {/* Scroll Progress Bar ONLY for Whiteboard */}
             {location.pathname === '/whiteboard' && (
               <div className="fixed right-0 top-0 bottom-0 w-1.5 bg-theme-border/50 z-50">
