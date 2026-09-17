@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { BrowserRouter, Routes, Route, Link, useLocation, Navigate } from 'react-router-dom';
-import { LayoutDashboard, FolderKanban, CheckSquare, Users, BarChart3, Settings, Bell, Search, LogOut, Sun, Moon, X, Palette, PenTool, Key, Lock, CheckCircle2, ShieldCheck, Trash2, Award } from 'lucide-react';
+import { LayoutDashboard, FolderKanban, CheckSquare, Users, BarChart3, Settings, Bell, Search, LogOut, Sun, Moon, X, Palette, PenTool, Key, Lock, CheckCircle2, ShieldCheck, Trash2, Award, Calendar } from 'lucide-react';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { ThemeProvider, useTheme, THEME_COLORS } from './contexts/ThemeContext';
 import type { ThemeColorName } from './contexts/ThemeContext';
@@ -16,6 +16,7 @@ import Team from './pages/Team';
 import Analytics from './pages/Analytics';
 import AttendanceReport from './pages/AttendanceReport';
 import Whiteboard from './pages/Whiteboard';
+import Schedules from './pages/Schedules';
 import Login from './pages/Login';
 import { motion, AnimatePresence } from 'framer-motion';
 
@@ -43,6 +44,7 @@ function Sidebar() {
     { icon: LayoutDashboard, label: 'Dashboard', path: '/' },
     { icon: FolderKanban, label: 'Projects', path: '/projects' },
     { icon: CheckSquare, label: 'Tasks', path: '/tasks' },
+    { icon: Calendar, label: 'Schedules', path: '/schedules' },
     { icon: Users, label: 'Team & Reports', path: '/team' },
     { icon: BarChart3, label: 'Analytics', path: '/analytics' },
     { icon: CheckSquare, label: 'Attendance Report', path: '/attendance-report' },
@@ -639,6 +641,7 @@ function App() {
             <Route path="/" element={<ProtectedRoute><Layout><Dashboard /></Layout></ProtectedRoute>} />
             <Route path="/projects" element={<ProtectedRoute><Layout><Projects /></Layout></ProtectedRoute>} />
             <Route path="/tasks" element={<ProtectedRoute><Layout><Tasks /></Layout></ProtectedRoute>} />
+            <Route path="/schedules" element={<ProtectedRoute><Layout><Schedules /></Layout></ProtectedRoute>} />
             <Route path="/team" element={<ProtectedRoute><Layout><Team /></Layout></ProtectedRoute>} />
             <Route path="/analytics" element={<ProtectedRoute><Layout><Analytics /></Layout></ProtectedRoute>} />
             <Route path="/attendance-report" element={<ProtectedRoute><Layout><AttendanceReport /></Layout></ProtectedRoute>} />

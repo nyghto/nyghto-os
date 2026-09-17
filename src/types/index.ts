@@ -100,3 +100,27 @@ export interface Withdrawal {
   createdAt: any;
 }
 
+export interface Schedule {
+  id: string;
+  title: string;
+  type: 'meeting' | 'update' | 'report' | 'deadline' | 'other';
+  date: string; // YYYY-MM-DD
+  time?: string; // HH:mm
+  description?: string;
+  attendees?: string[]; // user emails or names
+  meetLink?: string;
+  mode?: 'online' | 'offline';
+  onlinePlatform?: 'google_meet' | 'whatsapp' | 'zoom' | 'teams' | 'other';
+  offlineVenue?: 'office' | 'other';
+  offlineLocationName?: string; // e.g. 'Park', 'School', 'Coffee Shop'
+  offlineLocationLink?: string; // e.g. Google Maps link
+  status: 'scheduled' | 'completed' | 'cancelled';
+  attendedBy?: string[]; // user emails who marked attended
+  attendedUsers?: { email: string; name: string; attendedAt: any }[];
+  closedBy?: string;
+  closedAt?: any;
+  priority?: 'Low' | 'Medium' | 'High' | 'Urgent';
+  createdBy: string;
+  createdByEmail: string;
+  createdAt: any;
+}

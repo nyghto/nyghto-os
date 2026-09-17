@@ -3,9 +3,9 @@ import { signInWithPopup, GoogleAuthProvider, signOut } from 'firebase/auth';
 import { auth, db } from '../lib/firebase';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
-import { collection, query, where, onSnapshot, doc } from 'firebase/firestore';
+import { collection, query, where, onSnapshot, doc, getDocs } from 'firebase/firestore';
 import { Clock, Send, CheckCircle2, XCircle, ArrowRight, UserCheck, AlertTriangle, ShieldCheck, Lock, X } from 'lucide-react';
-import { isSuperAdmin, hasAdminAccess } from '../utils/permissions';
+import { isSuperAdmin, hasAdminAccess, CORE_EMAILS } from '../utils/permissions';
 
 export default function Login() {
   const { unauthorizedError, clearUnauthorizedError, pendingUser, clearPendingUser, requestAccess } = useAuth();
@@ -101,13 +101,36 @@ export default function Login() {
 
     try {
       const provider = new GoogleAuthProvider();
+      provider.setCustomParameters({
+        prompt: 'select_account'
+      });
       const result = await signInWithPopup(auth, provider);
       const userEmail = result.user?.email?.toLowerCase().trim() || '';
 
-      // All team users (or admins) are prompted for their security password
-      setPendingAdminUser(result.user);
-      setShowAdminPasswordModal(true);
-      setAdminPasswordInput('');
+      // Check if user is in core team or authorized email whitelist
+      let isAuthorized = CORE_EMAILS.includes(userEmail);
+      if (!isAuthorized && userEmail) {
+        try {
+          const q = query(collection(db, 'authorized_emails'), where('email', '==', userEmail));
+          const snap = await getDocs(q);
+          if (!snap.empty) {
+            isAuthorized = true;
+          }
+        } catch (e) {
+          console.error("Error checking authorization on login:", e);
+        }
+      }
+
+      if (isAuthorized) {
+        // Authorized team members / admin are prompted for their security password
+        setPendingAdminUser(result.user);
+        setShowAdminPasswordModal(true);
+        setAdminPasswordInput('');
+      } else {
+        // Unapproved / new accounts: AuthContext's onAuthStateChanged handles signOut and sets pendingUser so user sees "Send Access Request"
+        setShowAdminPasswordModal(false);
+        setPendingAdminUser(null);
+      }
     } catch (err: any) {
       if (err?.code === 'auth/unauthorized-domain' || err?.message?.includes('unauthorized-domain')) {
         const currentHost = window.location.hostname;
