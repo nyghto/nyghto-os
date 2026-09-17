@@ -72,7 +72,7 @@ export const TeamProvider = ({ children }: { children: React.ReactNode }) => {
           color: bgClass,
           phone: data.phone || '+91 0000000000',
           email: email,
-          avatarImage: data.avatarImage || undefined,
+          avatarImage: data.avatarImage || data.photoURL || undefined,
           customColorKey: colorKey
         };
       });
@@ -94,7 +94,8 @@ export const TeamProvider = ({ children }: { children: React.ReactNode }) => {
             duty: docDuties && docDuties.length > 0 ? docDuties[0] : undefined,
             duties: docDuties,
             color: COLOR_MAP[colorKey] || f.color,
-            customColorKey: colorKey
+            customColorKey: colorKey,
+            avatarImage: data.avatarImage || data.photoURL || f.avatarImage
           };
         }
         return f;

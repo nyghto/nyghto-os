@@ -1,7 +1,7 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
 import { onAuthStateChanged, signOut, type User } from 'firebase/auth';
 import { auth, db } from '../lib/firebase';
-import { doc, getDoc, setDoc, collection, query, where, getDocs } from 'firebase/firestore';
+import { doc, getDoc, setDoc, updateDoc, collection, query, where, getDocs } from 'firebase/firestore';
 import { CORE_EMAILS, getUserRole, getUserName, getUserAvatar, isCoreFounder } from '../utils/permissions';
 
 export const getMemberIdByEmail = (email: string | null | undefined): string => {
@@ -108,18 +108,34 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         let assignedRole = isCore ? getUserRole(email) : 'Employee';
         let assignedName = isCore ? getUserName(email) : (currentUser.displayName || email.split('@')[0]);
 
+        let authDocRef: any = null;
+        let authDocData: any = null;
+
         if (!isAllowed) {
           try {
             const q = query(collection(db, 'authorized_emails'), where('email', '==', email));
             const snap = await getDocs(q);
             if (!snap.empty) {
               isAllowed = true;
-              const docData = snap.docs[0].data();
-              if (docData.role) assignedRole = docData.role;
-              if (docData.name) assignedName = docData.name;
+              authDocRef = snap.docs[0].ref;
+              authDocData = snap.docs[0].data();
+              if (authDocData.role) assignedRole = authDocData.role;
+              if (authDocData.name) assignedName = authDocData.name;
             }
           } catch (err) {
             console.error("Error checking authorized email:", err);
+          }
+        } else {
+          // If core founder, also check if authorized_emails doc exists to sync photo
+          try {
+            const q = query(collection(db, 'authorized_emails'), where('email', '==', email));
+            const snap = await getDocs(q);
+            if (!snap.empty) {
+              authDocRef = snap.docs[0].ref;
+              authDocData = snap.docs[0].data();
+            }
+          } catch (err) {
+            // Ignore optional fetch error
           }
         }
 
@@ -148,10 +164,25 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
             status: 'Active',
             lastActive: Date.now(),
             email,
-            name: assignedName
+            name: assignedName,
+            photoURL: currentUser.photoURL || undefined
           }, { merge: true });
         } catch (e) {
           console.error("Error setting presence:", e);
+        }
+
+        // Sync Google photo to authorized_emails doc if not present
+        if (currentUser.photoURL && authDocRef) {
+          try {
+            if (!authDocData?.photoURL || !authDocData?.avatarImage) {
+              await updateDoc(authDocRef, {
+                photoURL: currentUser.photoURL,
+                avatarImage: authDocData?.avatarImage || currentUser.photoURL
+              });
+            }
+          } catch (e) {
+            console.error("Error updating authorized_emails photo:", e);
+          }
         }
 
         // Fetch or create user doc

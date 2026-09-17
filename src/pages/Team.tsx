@@ -523,6 +523,8 @@ export default function Team() {
         color: reqColor || 'emerald',
         addedBy: currentName,
         addedByEmail: user?.email || '',
+        avatarImage: reviewingRequest.photoURL || undefined,
+        photoURL: reviewingRequest.photoURL || undefined,
         createdAt: serverTimestamp()
       });
 
@@ -1081,17 +1083,20 @@ export default function Team() {
                     <tr key={report.id} className="hover:bg-white/5 transition-colors group">
                       <td className="px-6 py-4">
                         <div className="flex items-center gap-3">
-                          {getUserAvatar(report.employeeEmail) ? (
-                            <img 
-                              src={getUserAvatar(report.employeeEmail)!} 
-                              alt={report.employeeName} 
-                              className="w-8 h-8 rounded-full object-cover border border-nyghto-orange/40 shadow-sm" 
-                            />
-                          ) : (
-                            <div className="w-8 h-8 rounded-full bg-gray-800 border border-nyghto-border flex items-center justify-center font-medium">
-                              {report.employeeAvatar || report.employeeName?.charAt(0) || 'U'}
-                            </div>
-                          )}
+                          {(() => {
+                            const avatar = getUserAvatar(report.employeeEmail) || teamMembers.find(m => m.email?.toLowerCase() === report.employeeEmail?.toLowerCase())?.avatarImage;
+                            return avatar ? (
+                              <img 
+                                src={avatar} 
+                                alt={report.employeeName} 
+                                className="w-8 h-8 rounded-full object-cover border border-nyghto-orange/40 shadow-sm" 
+                              />
+                            ) : (
+                              <div className="w-8 h-8 rounded-full bg-gray-800 border border-nyghto-border flex items-center justify-center font-medium">
+                                {report.employeeAvatar || report.employeeName?.charAt(0) || 'U'}
+                              </div>
+                            );
+                          })()}
                           <div>
                             <div className="text-xs font-bold text-white group-hover:text-nyghto-orange transition-colors">{report.employeeName || 'Team Member'}</div>
                             <div className="flex items-center gap-1.5 flex-wrap">
@@ -2072,9 +2077,17 @@ export default function Team() {
                   return (
                     <div key={item.id} className="p-4 bg-white/5 border border-white/10 rounded-xl flex items-center justify-between group hover:border-white/20 transition-all">
                       <div className="flex items-center gap-3">
-                        <div className={`w-10 h-10 rounded-full ${colorObj.bg} ${colorObj.text} flex items-center justify-center font-bold border ${colorObj.border} shadow-sm`}>
-                          {item.name?.charAt(0) || 'U'}
-                        </div>
+                        {item.avatarImage || item.photoURL ? (
+                          <img 
+                            src={item.avatarImage || item.photoURL} 
+                            alt={item.name} 
+                            className="w-10 h-10 rounded-full object-cover border border-white/20 shadow-sm"
+                          />
+                        ) : (
+                          <div className={`w-10 h-10 rounded-full ${colorObj.bg} ${colorObj.text} flex items-center justify-center font-bold border ${colorObj.border} shadow-sm`}>
+                            {item.name?.charAt(0) || 'U'}
+                          </div>
+                        )}
                         <div>
                           <div className="font-bold text-white text-sm">{item.name}</div>
                           <div className="text-xs text-gray-300 font-mono">{item.email}</div>
