@@ -6,7 +6,7 @@ import {
   Globe, MapPin, MessageCircle, Building2, Navigation, Link as LinkIcon,
   UserCheck, Lock, CheckCircle
 } from 'lucide-react';
-import { collection, onSnapshot, addDoc, updateDoc, deleteDoc, doc, serverTimestamp, query, orderBy, arrayUnion, arrayRemove } from 'firebase/firestore';
+import { collection, onSnapshot, addDoc, updateDoc, deleteDoc, doc, getDoc, serverTimestamp, query, orderBy, arrayUnion, arrayRemove } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import { useAuth } from '../contexts/AuthContext';
 import { useTeam } from '../contexts/TeamContext';
@@ -42,6 +42,12 @@ export default function Schedules() {
   // Modal State
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingSchedule, setEditingSchedule] = useState<Schedule | null>(null);
+
+  // Admin Delete Password Modal State
+  const [deletingSchedule, setDeletingSchedule] = useState<Schedule | null>(null);
+  const [deletePassInput, setDeletePassInput] = useState('');
+  const [deletePassError, setDeletePassError] = useState('');
+  const [isDeletingLoading, setIsDeletingLoading] = useState(false);
   
   // Form State
   const [title, setTitle] = useState('');
@@ -264,16 +270,55 @@ export default function Schedules() {
     }
   };
 
-  const handleDelete = async (sch: Schedule) => {
+  const promptDeleteSchedule = (sch: Schedule) => {
     if (!isMainAdmin) {
       alert("Only admins can delete scheduled events.");
       return;
     }
-    if (!window.confirm(`Delete "${sch.title}"?`)) return;
+    setDeletingSchedule(sch);
+    setDeletePassInput('');
+    setDeletePassError('');
+  };
+
+  const confirmDeleteScheduleWithPassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!deletingSchedule || !isMainAdmin) return;
+
+    setDeletePassError('');
+    setIsDeletingLoading(true);
+
     try {
-      await deleteDoc(doc(db, 'schedules', sch.id));
-    } catch (err) {
+      let expectedPass = '9999';
+
+      // Check admin_config deletePin from database
+      const adminDoc = await getDoc(doc(db, 'settings', 'admin_config'));
+      if (adminDoc.exists() && adminDoc.data().deletePin) {
+        expectedPass = adminDoc.data().deletePin.toString().trim();
+      }
+
+      if (deletePassInput.trim() !== expectedPass) {
+        setDeletePassError('Incorrect Admin Delete Password! Event was not deleted.');
+        setIsDeletingLoading(false);
+        return;
+      }
+
+      // Password verified! Delete the schedule
+      await deleteDoc(doc(db, 'schedules', deletingSchedule.id));
+
+      await addDoc(collection(db, 'activities'), {
+        text: `${currentUserName} deleted schedule: "${deletingSchedule.title}"`,
+        type: 'general',
+        iconColor: 'text-red-400',
+        createdAt: serverTimestamp()
+      });
+
+      setDeletingSchedule(null);
+      setDeletePassInput('');
+    } catch (err: any) {
       console.error("Error deleting schedule:", err);
+      setDeletePassError(err.message || 'Failed to delete schedule');
+    } finally {
+      setIsDeletingLoading(false);
     }
   };
 
@@ -764,7 +809,7 @@ export default function Schedules() {
                         <Edit3 className="w-4 h-4" />
                       </button>
                       <button
-                        onClick={() => handleDelete(sch)}
+                        onClick={() => promptDeleteSchedule(sch)}
                         className="p-1.5 text-red-400/80 hover:text-red-400 rounded-lg hover:bg-red-500/10 transition-all cursor-pointer"
                         title="Delete Schedule (Admin Only)"
                       >
@@ -1124,6 +1169,71 @@ export default function Schedules() {
                   className="px-5 py-2 text-xs font-bold text-white bg-nyghto-orange hover:bg-orange-600 rounded-lg shadow-lg shadow-nyghto-orange/20 transition-all cursor-pointer disabled:opacity-50"
                 >
                   {isSubmitting ? 'Saving...' : editingSchedule ? 'Save Changes' : 'Schedule Event'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Admin Delete Password Confirmation Modal */}
+      {deletingSchedule && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-in fade-in duration-200">
+          <div className="bg-[#12141a] border border-red-500/30 rounded-2xl w-full max-w-sm overflow-hidden shadow-2xl p-6 relative">
+            <button
+              onClick={() => { setDeletingSchedule(null); setDeletePassInput(''); setDeletePassError(''); }}
+              className="absolute top-4 right-4 text-gray-400 hover:text-white p-1 rounded-lg hover:bg-white/10 transition-colors"
+            >
+              <X className="w-5 h-5" />
+            </button>
+
+            <div className="flex flex-col items-center text-center mb-5">
+              <div className="w-12 h-12 rounded-full bg-red-500/20 border border-red-500/30 text-red-400 flex items-center justify-center mb-3 shadow-lg">
+                <Trash2 className="w-6 h-6" />
+              </div>
+              <h3 className="text-lg font-bold text-white">Delete Schedule Confirmation</h3>
+              <p className="text-xs text-gray-400 mt-1 max-w-[240px]">
+                Enter Admin Delete Password to delete <b className="text-white font-medium">"{deletingSchedule.title}"</b>.
+              </p>
+            </div>
+
+            {deletePassError && (
+              <div className="mb-4 p-2.5 rounded-lg bg-red-500/10 border border-red-500/20 text-red-400 text-xs text-center font-medium leading-relaxed">
+                {deletePassError}
+              </div>
+            )}
+
+            <form onSubmit={confirmDeleteScheduleWithPassword} className="space-y-4">
+              <div>
+                <input
+                  type="password"
+                  autoFocus
+                  required
+                  value={deletePassInput}
+                  onChange={(e) => {
+                    setDeletePassInput(e.target.value);
+                    setDeletePassError('');
+                  }}
+                  placeholder="Enter Delete Password (••••)"
+                  className="w-full text-center text-base tracking-[0.2em] font-mono py-2.5 bg-black/60 border border-white/20 rounded-xl text-white placeholder:text-gray-600 focus:outline-none focus:border-red-500 focus:ring-1 focus:ring-red-500 shadow-inner"
+                />
+              </div>
+
+              <div className="flex gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={() => { setDeletingSchedule(null); setDeletePassInput(''); setDeletePassError(''); }}
+                  className="w-1/2 py-2.5 bg-white/5 hover:bg-white/10 text-gray-300 rounded-xl text-xs font-semibold transition-colors border border-white/10 cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={!deletePassInput || isDeletingLoading}
+                  className="w-1/2 py-2.5 bg-red-600 hover:bg-red-700 text-white rounded-xl text-xs font-bold transition-colors shadow-lg disabled:opacity-50 flex items-center justify-center gap-1.5 cursor-pointer"
+                >
+                  <Trash2 className="w-4 h-4" />
+                  <span>{isDeletingLoading ? 'Deleting...' : 'Delete Event'}</span>
                 </button>
               </div>
             </form>
