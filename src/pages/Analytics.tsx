@@ -3,7 +3,7 @@ import {
   BarChart, Bar, AreaChart, Area, PieChart, Pie, Cell,
   XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend
 } from 'recharts';
-import { TrendingUp, Users, Target, Activity, CheckCircle2, Clock, Calendar, Wallet, Landmark, ArrowDownRight, ChevronDown, IndianRupee } from 'lucide-react';
+import { TrendingUp, Users, Target, Activity, CheckCircle2, Clock, Calendar, Wallet, Landmark, ArrowDownRight, ChevronDown, IndianRupee, CreditCard } from 'lucide-react';
 import { collection, onSnapshot, query } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import type { Task, Project, Report, Withdrawal } from '../types';
@@ -102,6 +102,9 @@ export default function Analytics() {
 
   const totalGotMoney = filteredProjects.reduce((sum, p) => sum + getGot(p), 0);
   const totalWithdrawn = filteredWithdrawals.reduce((sum, w) => sum + (Number(w.amount) || 0), 0);
+  const totalMetaAdsWithdrawn = filteredWithdrawals
+    .filter(w => w.category === 'Meta Ads')
+    .reduce((sum, w) => sum + (Number(w.amount) || 0), 0);
   const currentPeriodBalance = totalGotMoney - totalWithdrawn;
   const totalPending = Math.max(0, totalRevenue - totalGotMoney);
 
@@ -109,6 +112,9 @@ export default function Analytics() {
   const lifetimeAdvance = projects.reduce((sum, p) => sum + (Number(p.advance) || 0), 0);
   const lifetimeGotMoney = projects.reduce((sum, p) => sum + getGot(p), 0);
   const lifetimeWithdrawn = withdrawals.reduce((sum, w) => sum + (Number(w.amount) || 0), 0);
+  const lifetimeMetaAdsWithdrawn = withdrawals
+    .filter(w => w.category === 'Meta Ads')
+    .reduce((sum, w) => sum + (Number(w.amount) || 0), 0);
   const lifetimeAccountBalance = lifetimeGotMoney - lifetimeWithdrawn;
   const lifetimePending = Math.max(0, lifetimeTotalRevenue - lifetimeGotMoney);
   
@@ -348,7 +354,7 @@ export default function Analytics() {
 
       {/* Expanded Financial Cards in Analytics (Shown only when Show All is clicked) */}
       {showAllFinanceCards && (
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 animate-in fade-in slide-in-from-top-2 duration-300">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 animate-in fade-in slide-in-from-top-2 duration-300">
           {/* Withdrawn Money */}
           <div className="glass-card hover-scale p-4 flex flex-col justify-between border-rose-500/30 bg-rose-500/10">
             <div className="flex justify-between items-center text-rose-400">
@@ -393,6 +399,21 @@ export default function Analytics() {
             <div className="text-xs text-blue-400/80 mt-2 flex justify-between items-center pt-2 border-t border-white/5">
               <span>Initial advance</span>
               <span className="text-gray-500">Life: ₹{lifetimeAdvance.toLocaleString('en-IN')}</span>
+            </div>
+          </div>
+
+          {/* Meta Ads AC */}
+          <div className="glass-card hover-scale p-4 flex flex-col justify-between border-indigo-500/30 bg-indigo-500/10">
+            <div className="flex justify-between items-center text-indigo-400">
+              <span className="text-xs font-bold uppercase tracking-wider">Meta Ads AC</span>
+              <div className="w-8 h-8 rounded-lg bg-indigo-500/20 border border-indigo-500/30 text-indigo-400 flex items-center justify-center">
+                <CreditCard className="w-4 h-4" />
+              </div>
+            </div>
+            <div className="text-xl font-black text-indigo-400 mt-2">₹{totalMetaAdsWithdrawn.toLocaleString('en-IN')}</div>
+            <div className="text-xs text-indigo-400/80 mt-2 flex justify-between items-center pt-2 border-t border-white/5">
+              <span>Total Ads Spend</span>
+              <span className="text-gray-400">Life: ₹{lifetimeMetaAdsWithdrawn.toLocaleString('en-IN')}</span>
             </div>
           </div>
         </div>

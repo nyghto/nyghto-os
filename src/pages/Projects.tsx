@@ -247,12 +247,21 @@ export default function Projects() {
   const totalWithdrawn = financeWithdrawals.reduce((sum, w) => sum + (Number(w.amount) || 0), 0);
   const totalPending = Math.max(0, totalMoney - totalGotMoney);
 
+  // Meta Ads specific withdrawals
+  const totalMetaAdsWithdrawn = financeWithdrawals
+    .filter(w => w.category === 'Meta Ads')
+    .reduce((sum, w) => sum + (Number(w.amount) || 0), 0);
+
   // All-time Totals
   const lifetimeTotalMoney = projects.reduce((sum, p) => sum + (Number(p.budget) || 0), 0);
   const lifetimeAdvance = projects.reduce((sum, p) => sum + (Number(p.advance) || 0), 0);
   const lifetimeGotMoney = projects.reduce((sum, p) => sum + getProjectGotMoney(p), 0);
   const lifetimeWithdrawn = withdrawals.reduce((sum, w) => sum + (Number(w.amount) || 0), 0);
   const lifetimePending = Math.max(0, lifetimeTotalMoney - lifetimeGotMoney);
+
+  const lifetimeMetaAdsWithdrawn = withdrawals
+    .filter(w => w.category === 'Meta Ads')
+    .reduce((sum, w) => sum + (Number(w.amount) || 0), 0);
 
   // Nyghto Account Balance: Total Got Money minus Total Withdrawn Money
   const currentPeriodBalance = totalGotMoney - totalWithdrawn;
@@ -1006,8 +1015,8 @@ export default function Projects() {
 
         {/* Secondary Expanded Cards (Shown only when Show All is clicked) */}
         {showAllFinanceCards && (
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 pt-2 border-t border-white/5 animate-in fade-in slide-in-from-top-2 duration-300">
-            {/* Withdrawn Money */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 pt-2 border-t border-white/5 animate-in fade-in slide-in-from-top-2 duration-300">
+            {/* 1. Withdrawn Money */}
             <div className="bg-rose-500/10 hover:bg-rose-500/15 border border-rose-500/30 rounded-xl p-4 transition-all group bg-gradient-to-br from-rose-500/10 to-transparent">
               <div className="flex items-center justify-between text-rose-400 mb-2">
                 <span className="text-[11px] font-bold uppercase tracking-wider">Withdrawn Money</span>
@@ -1024,7 +1033,7 @@ export default function Projects() {
               </div>
             </div>
 
-            {/* Total Got Money */}
+            {/* 2. Total Got Money */}
             <div className="bg-white/5 hover:bg-white/10 border border-emerald-500/20 rounded-xl p-4 transition-all group bg-gradient-to-br from-emerald-500/5 to-transparent">
               <div className="flex items-center justify-between text-emerald-400 mb-2">
                 <span className="text-[11px] font-semibold uppercase tracking-wider">Total Got Money</span>
@@ -1043,7 +1052,7 @@ export default function Projects() {
               </div>
             </div>
 
-            {/* Advance Money */}
+            {/* 3. Advance Money */}
             <div className="bg-white/5 hover:bg-white/10 border border-blue-500/20 rounded-xl p-4 transition-all group bg-gradient-to-br from-blue-500/5 to-transparent">
               <div className="flex items-center justify-between text-blue-400 mb-2">
                 <span className="text-[11px] font-semibold uppercase tracking-wider">Advance Money</span>
@@ -1057,6 +1066,23 @@ export default function Projects() {
               <div className="text-[10px] text-blue-400/80 mt-1 flex justify-between items-center">
                 <span>Initial advance</span>
                 <span className="text-gray-500">Life: ₹{lifetimeAdvance.toLocaleString('en-IN')}</span>
+              </div>
+            </div>
+
+            {/* 4. Meta Ads AC */}
+            <div className="bg-indigo-500/10 hover:bg-indigo-500/15 border border-indigo-500/30 rounded-xl p-4 transition-all group bg-gradient-to-br from-indigo-500/10 to-transparent">
+              <div className="flex items-center justify-between text-indigo-400 mb-2">
+                <span className="text-[11px] font-bold uppercase tracking-wider">Meta Ads AC</span>
+                <div className="w-7 h-7 rounded-lg bg-indigo-500/20 border border-indigo-500/30 text-indigo-400 flex items-center justify-center">
+                  <CreditCard className="w-4 h-4" />
+                </div>
+              </div>
+              <div className="text-xl font-black text-indigo-400">
+                ₹{totalMetaAdsWithdrawn.toLocaleString('en-IN')}
+              </div>
+              <div className="text-[10px] text-indigo-400/80 mt-1 flex justify-between items-center">
+                <span>Total Ads Spend</span>
+                <span className="text-gray-400">Life: ₹{lifetimeMetaAdsWithdrawn.toLocaleString('en-IN')}</span>
               </div>
             </div>
           </div>
@@ -1746,16 +1772,20 @@ export default function Projects() {
             </div>
 
             {/* Current Balance Banner */}
-            <div className="p-3 mb-4 rounded-xl bg-emerald-500/10 border border-emerald-500/20 flex justify-between items-center">
+            <div className="p-3 mb-4 rounded-xl bg-emerald-500/10 border border-emerald-500/20 flex flex-col sm:flex-row justify-between sm:items-center gap-2">
               <div>
-                <span className="text-[11px] text-gray-400 uppercase font-bold tracking-wider">Current Account Balance</span>
+                <span className="text-[11px] text-gray-400 uppercase font-bold tracking-wider">Nyghto Account Balance</span>
                 <div className="text-lg font-black text-emerald-400">
                   ₹{lifetimeAccountBalance.toLocaleString('en-IN')}
                 </div>
               </div>
-              <div className="text-right text-[11px] text-gray-400">
+              <div className="text-left sm:text-right text-[11px] text-gray-400 space-y-0.5">
                 <div>Total Received: <b className="text-white">₹{lifetimeGotMoney.toLocaleString('en-IN')}</b></div>
-                <div>Withdrawn: <b className="text-rose-400">₹{lifetimeWithdrawn.toLocaleString('en-IN')}</b></div>
+                <div className="flex sm:justify-end items-center gap-2">
+                  <span>Withdrawn: <b className="text-rose-400">₹{lifetimeWithdrawn.toLocaleString('en-IN')}</b></span>
+                  <span>•</span>
+                  <span>Meta Ads AC: <b className="text-indigo-400">₹{lifetimeMetaAdsWithdrawn.toLocaleString('en-IN')}</b></span>
+                </div>
               </div>
             </div>
 
@@ -1801,7 +1831,7 @@ export default function Projects() {
                     setWithdrawReason(e.target.value);
                     setWithdrawError('');
                   }}
-                  placeholder="e.g. Server hosting renewal, office supplies, team advance payout..."
+                  placeholder="e.g. Meta ads campaign budget, server hosting renewal, office supplies..."
                   className="w-full px-3 py-2 bg-nyghto-dark border border-white/15 rounded-xl text-white text-sm placeholder:text-gray-600 focus:outline-none focus:border-rose-500 focus:ring-1 focus:ring-rose-500 resize-none"
                 />
               </div>
@@ -1814,6 +1844,7 @@ export default function Projects() {
                     onChange={(e) => setWithdrawCategory(e.target.value)}
                     className="w-full px-3 py-2 bg-nyghto-dark border border-white/15 rounded-xl text-white text-xs focus:outline-none focus:border-rose-500 cursor-pointer"
                   >
+                    <option value="Meta Ads">Meta Ads</option>
                     <option value="Office & Operational">Office & Operational</option>
                     <option value="Software & Hosting">Software & Hosting</option>
                     <option value="Team / Salary Advance">Team / Salary Advance</option>
@@ -1893,7 +1924,7 @@ export default function Projects() {
             </div>
 
             {/* Summary strip inside history */}
-            <div className="grid grid-cols-3 gap-3 p-3 bg-white/5 rounded-xl border border-white/10 mb-4">
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 p-3 bg-white/5 rounded-xl border border-white/10 mb-4">
               <div>
                 <span className="text-[10px] text-gray-400 uppercase font-bold">Lifetime Got</span>
                 <div className="text-base font-extrabold text-emerald-400">₹{lifetimeGotMoney.toLocaleString('en-IN')}</div>
@@ -1901,6 +1932,10 @@ export default function Projects() {
               <div>
                 <span className="text-[10px] text-gray-400 uppercase font-bold">Lifetime Withdrawn</span>
                 <div className="text-base font-extrabold text-rose-400">₹{lifetimeWithdrawn.toLocaleString('en-IN')}</div>
+              </div>
+              <div>
+                <span className="text-[10px] text-indigo-400 uppercase font-bold">Meta Ads AC</span>
+                <div className="text-base font-extrabold text-indigo-400">₹{lifetimeMetaAdsWithdrawn.toLocaleString('en-IN')}</div>
               </div>
               <div>
                 <span className="text-[10px] text-gray-400 uppercase font-bold">Current Balance</span>
