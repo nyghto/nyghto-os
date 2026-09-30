@@ -113,11 +113,20 @@ export default function Tasks() {
         createdAt: serverTimestamp()
       });
       
+      const assignedMember = teamMembers.find(m => m.id === newTaskAssignee);
+
       await addDoc(collection(db, 'activities'), {
-        text: `${userData?.name || 'User'} created task '${newTaskTitle}'`,
+        text: assignedMember 
+          ? `New task assigned to ${assignedMember.name}: '${newTaskTitle}'` 
+          : `${userData?.name || 'Admin'} created task '${newTaskTitle}'`,
         type: 'task',
         iconColor: 'text-orange-500',
-        createdAt: serverTimestamp()
+        createdAt: serverTimestamp(),
+        targetUserId: newTaskAssignee,
+        targetUserEmail: assignedMember?.email ? assignedMember.email.toLowerCase().trim() : '',
+        targetUserName: assignedMember?.name || '',
+        assignedEntityName: newTaskTitle,
+        seenBy: []
       });
 
       setIsModalOpen(false);
@@ -163,12 +172,30 @@ export default function Tasks() {
 
       await updateDoc(doc(db, 'tasks', editingTask.id), updatePayload);
 
-      await addDoc(collection(db, 'activities'), {
-        text: `${userData?.name || 'Admin'} updated task '${editTaskTitle.trim()}'`,
-        type: 'task',
-        iconColor: 'text-nyghto-orange',
-        createdAt: serverTimestamp()
-      });
+      // If assignee was changed
+      if (editingTask.assigneeId !== editTaskAssignee) {
+        const newlyAssigned = teamMembers.find(m => m.id === editTaskAssignee);
+        if (newlyAssigned) {
+          await addDoc(collection(db, 'activities'), {
+            text: `Task '${editTaskTitle.trim()}' was reassigned to ${newlyAssigned.name}`,
+            type: 'task',
+            iconColor: 'text-nyghto-orange',
+            createdAt: serverTimestamp(),
+            targetUserId: newlyAssigned.id,
+            targetUserEmail: newlyAssigned.email ? newlyAssigned.email.toLowerCase().trim() : '',
+            targetUserName: newlyAssigned.name,
+            assignedEntityName: editTaskTitle.trim(),
+            seenBy: []
+          });
+        }
+      } else {
+        await addDoc(collection(db, 'activities'), {
+          text: `${userData?.name || 'Admin'} updated task '${editTaskTitle.trim()}'`,
+          type: 'task',
+          iconColor: 'text-nyghto-orange',
+          createdAt: serverTimestamp()
+        });
+      }
 
       setEditingTask(null);
     } catch (error) {
@@ -178,10 +205,25 @@ export default function Tasks() {
 
   const assignTask = async (taskId: string, memberId: string) => {
     try {
+      const currentTask = tasks.find(t => t.id === taskId);
       const taskRef = doc(db, 'tasks', taskId);
       await updateDoc(taskRef, {
         assigneeId: memberId
       });
+      const newAssignee = teamMembers.find(m => m.id === memberId);
+      if (newAssignee && currentTask) {
+        await addDoc(collection(db, 'activities'), {
+          text: `Task '${currentTask.title}' was assigned to ${newAssignee.name}`,
+          type: 'task',
+          iconColor: 'text-nyghto-orange',
+          createdAt: serverTimestamp(),
+          targetUserId: newAssignee.id,
+          targetUserEmail: newAssignee.email ? newAssignee.email.toLowerCase().trim() : '',
+          targetUserName: newAssignee.name,
+          assignedEntityName: currentTask.title,
+          seenBy: []
+        });
+      }
       setActiveDropdown(null);
     } catch (error) {
       console.error("Error assigning task: ", error);

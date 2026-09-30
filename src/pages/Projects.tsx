@@ -307,10 +307,16 @@ export default function Projects() {
       });
       
       await addDoc(collection(db, 'activities'), {
-        text: `${userData?.name || 'User'} created project '${name}'`,
+        text: selectedTeam.length > 0
+          ? `New project '${name}' assigned to: ${selectedTeam.join(', ')}`
+          : `${userData?.name || 'User'} created project '${name}'`,
         type: 'project',
         iconColor: 'text-blue-500',
-        createdAt: serverTimestamp()
+        createdAt: serverTimestamp(),
+        targetUserId: selectedTeam.join(','),
+        targetUserName: selectedTeam.join(', '),
+        assignedEntityName: name,
+        seenBy: []
       });
 
       setIsAddingProject(false);

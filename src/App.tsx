@@ -17,7 +17,9 @@ import Analytics from './pages/Analytics';
 import AttendanceReport from './pages/AttendanceReport';
 import Whiteboard from './pages/Whiteboard';
 import Schedules from './pages/Schedules';
+import SettingsPage from './pages/Settings';
 import Login from './pages/Login';
+import { AssignmentFloatingAlert } from './components/AssignmentFloatingAlert';
 import { motion, AnimatePresence } from 'framer-motion';
 
 function Sidebar({ isOpen, onClose }: { isOpen?: boolean; onClose?: () => void }) {
@@ -248,13 +250,20 @@ function Sidebar({ isOpen, onClose }: { isOpen?: boolean; onClose?: () => void }
                 </div>
               </div>
               
-              <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+              <div className="flex items-center gap-1 shrink-0">
                 <Link
                   to="/team"
-                  className="text-theme-muted hover:text-yellow-400 p-1 transition-colors"
+                  className="text-theme-muted hover:text-yellow-400 p-1.5 rounded-lg hover:bg-white/5 transition-colors"
                   title="View My Points & Leaderboard"
                 >
                   <Award className="w-4 h-4" />
+                </Link>
+                <Link
+                  to="/settings"
+                  className="text-theme-muted hover:text-nyghto-orange p-1 transition-colors"
+                  title="Settings"
+                >
+                  <Settings className="w-4 h-4" />
                 </Link>
                 <button 
                   onClick={() => {
@@ -266,7 +275,7 @@ function Sidebar({ isOpen, onClose }: { isOpen?: boolean; onClose?: () => void }
                     setPassSuccess('');
                   }}
                   className="text-theme-muted hover:text-nyghto-orange p-1 transition-colors"
-                  title="Change Password"
+                  title="Quick Password Change"
                 >
                   <Key className="w-4 h-4" />
                 </button>
@@ -450,12 +459,23 @@ function Header({ onOpenMobileMenu }: { onOpenMobileMenu?: () => void }) {
   const [activities, setActivities] = useState<Activity[]>([]);
 
   React.useEffect(() => {
-    const q = query(collection(db, 'activities'), orderBy('createdAt', 'desc'), limit(10));
+    const q = query(collection(db, 'activities'), orderBy('createdAt', 'desc'), limit(30));
     const unsubscribe = onSnapshot(q, (snapshot) => {
-      setActivities(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as Activity[]);
+      const allActs = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as Activity[];
+      const userEmail = (user?.email || '').toLowerCase().trim();
+      
+      // Filter activities: show public activities + those specifically targeted to this user
+      const filtered = allActs.filter(a => {
+        if (!a.targetUserEmail && !a.targetUserId && !a.targetUserName) return true; // general activity
+        if (a.targetUserEmail && a.targetUserEmail.toLowerCase().trim() === userEmail) return true;
+        if (a.targetUserName && user?.displayName && a.targetUserName.toLowerCase().includes(user.displayName.toLowerCase().trim())) return true;
+        return true;
+      });
+
+      setActivities(filtered);
     });
     return () => unsubscribe();
-  }, []);
+  }, [user]);
 
   const handleDeleteActivity = async (activityId: string) => {
     try {
@@ -574,6 +594,13 @@ function Header({ onOpenMobileMenu }: { onOpenMobileMenu?: () => void }) {
             </div>
           )}
         </div>
+        <Link 
+          to="/settings"
+          className="relative p-2 text-theme-muted hover:text-nyghto-orange transition-colors rounded-full hover:bg-theme-border"
+          title="System Settings"
+        >
+          <Settings className="w-5 h-5" />
+        </Link>
       </div>
     </header>
   );
@@ -647,6 +674,9 @@ function Layout({ children }: { children: React.ReactNode }) {
           </main>
         </div>
       </div>
+
+      {/* 1-Time Floating Alert on Login when Task/Project is Added */}
+      <AssignmentFloatingAlert />
     </>
   );
 }
@@ -685,6 +715,7 @@ function App() {
             <Route path="/analytics" element={<ProtectedRoute><Layout><Analytics /></Layout></ProtectedRoute>} />
             <Route path="/attendance-report" element={<ProtectedRoute><Layout><AttendanceReport /></Layout></ProtectedRoute>} />
             <Route path="/whiteboard" element={<ProtectedRoute><Layout><Whiteboard /></Layout></ProtectedRoute>} />
+            <Route path="/settings" element={<ProtectedRoute><Layout><SettingsPage /></Layout></ProtectedRoute>} />
             
             <Route path="*" element={
               <ProtectedRoute>

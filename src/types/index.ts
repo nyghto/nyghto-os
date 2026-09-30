@@ -73,7 +73,12 @@ export interface Activity {
   text: string;
   type: 'project' | 'task' | 'report' | 'client' | 'general' | 'points';
   iconColor: string;
-  createdAt: number;
+  createdAt: any;
+  targetUserId?: string; // e.g. memberId ('u1', 'u2') or 'all'
+  targetUserEmail?: string; // target employee's email
+  targetUserName?: string;
+  assignedEntityName?: string; // project name or task title
+  seenBy?: string[]; // user emails who already dismissed or acknowledged
 }
 
 export interface PointRecord {
