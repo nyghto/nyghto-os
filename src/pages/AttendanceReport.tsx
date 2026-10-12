@@ -44,7 +44,7 @@ export default function AttendanceReport() {
       const isSunday = new Date(displayYear, displayMonth, i).getDay() === 0;
 
       if (!isSunday && status !== 'Off Day') {
-        if (status === 'Present') totalMarks += 10;
+        if (status === 'Present' || status === 'Work From Home') totalMarks += 10;
         else if (status === 'Half Day') totalMarks += 5;
         else if (status === 'Absent') leavesTaken++;
       }
@@ -197,6 +197,7 @@ export default function AttendanceReport() {
 
                   let styleClass = 'bg-theme-bg/50 text-theme-muted border border-transparent';
                   if (status === 'Present') styleClass = 'bg-green-500/20 text-green-500 border border-green-500/30 font-bold';
+                  else if (status === 'Work From Home') styleClass = 'bg-blue-500/20 text-blue-400 border border-blue-500/30 font-bold';
                   else if (status === 'Half Day') styleClass = 'bg-yellow-500/20 text-yellow-500 border border-yellow-500/30 font-bold';
                   else if (status === 'Absent') styleClass = 'bg-red-500/20 text-red-500 border border-red-500/30 font-bold';
                   else if (status === 'Off Day') styleClass = 'bg-gray-500/20 text-gray-500 border border-gray-500/30 font-bold';
@@ -215,7 +216,7 @@ export default function AttendanceReport() {
 
               <div className="mt-6 flex gap-3 text-xs justify-center text-theme-muted bg-theme-bg p-3 rounded-lg border border-theme-border flex-wrap">
                 <div className="flex items-center gap-1.5"><div className="w-3 h-3 rounded-full bg-green-500/20 border border-green-500/30"></div> Present</div>
-                <div className="flex items-center gap-1.5"><div className="w-3 h-3 rounded-full bg-yellow-500/20 border border-yellow-500/30"></div> Half Day</div>
+                <div className="flex items-center gap-1.5"><div className="w-3 h-3 rounded-full bg-blue-500/20 border border-blue-500/30"></div> Work From Home</div>
                 <div className="flex items-center gap-1.5"><div className="w-3 h-3 rounded-full bg-red-500/20 border border-red-500/30"></div> Absent</div>
                 <div className="flex items-center gap-1.5"><div className="w-3 h-3 rounded-full bg-gray-500/20 border border-gray-500/30"></div> Off Day</div>
               </div>

@@ -674,10 +674,10 @@ export default function Team() {
       return;
     }
     
-    // Cycle: None -> Present -> Half Day -> Absent -> None
+    // Cycle: None -> Present -> Work From Home -> Absent -> None
     let nextStatus = 'Present';
-    if (currentStatus === 'Present') nextStatus = 'Half Day';
-    else if (currentStatus === 'Half Day') nextStatus = 'Absent';
+    if (currentStatus === 'Present') nextStatus = 'Work From Home';
+    else if (currentStatus === 'Work From Home' || currentStatus === 'Half Day') nextStatus = 'Absent';
     else if (currentStatus === 'Absent') nextStatus = 'None';
 
     try {
@@ -797,7 +797,7 @@ export default function Team() {
       const isSunday = new Date(y, m, i).getDay() === 0;
 
       if (!isSunday && status !== 'Off Day') {
-        if (status === 'Present') totalMarks += 10;
+        if (status === 'Present' || status === 'Work From Home') totalMarks += 10;
         else if (status === 'Half Day') totalMarks += 5;
         else if (status === 'Absent') leavesTaken++;
       }
@@ -1425,7 +1425,7 @@ export default function Team() {
           <div className="flex justify-between items-center mb-6">
             <div>
               <h3 className="text-xl font-bold text-white mb-1">Attendance ({monthName} {attendanceYear})</h3>
-              <p className="text-sm text-gray-400">Click a cell to cycle: Present → Half Day → Absent → Clear (Right click Date for Off Day)</p>
+              <p className="text-sm text-gray-400">Click a cell to cycle: Present → Work From Home → Absent → Clear (Right click Date for Off Day)</p>
             </div>
             <div className="flex items-center gap-3">
               {!isMainAdmin ? (
@@ -1516,6 +1516,9 @@ export default function Team() {
                         if (status === 'Present') {
                           display = 'P';
                           classes = 'bg-green-500/20 text-green-400 border-green-500/30 font-bold shadow-[0_0_8px_rgba(34,197,94,0.3)]';
+                        } else if (status === 'Work From Home') {
+                          display = 'WFH';
+                          classes = 'bg-blue-500/20 text-blue-400 border-blue-500/30 font-bold';
                         } else if (status === 'Half Day') {
                           display = 'HD';
                           classes = 'bg-yellow-500/20 text-nyghto-yellow border-yellow-500/30 font-bold';
@@ -1566,7 +1569,7 @@ export default function Team() {
           
           <div className="mt-4 flex gap-4 text-xs justify-center text-gray-400 bg-white/5 p-3 rounded-lg flex-wrap">
             <div className="flex items-center gap-1.5"><div className="w-4 h-4 rounded bg-green-500/20 border border-green-500/30 flex items-center justify-center text-[10px] text-green-400 font-bold">P</div> = Present</div>
-            <div className="flex items-center gap-1.5"><div className="w-4 h-4 rounded bg-yellow-500/20 border border-yellow-500/30 flex items-center justify-center text-[10px] text-nyghto-yellow font-bold">HD</div> = Half Day</div>
+            <div className="flex items-center gap-1.5"><div className="w-4 h-4 rounded bg-blue-500/20 border border-blue-500/30 flex items-center justify-center text-[10px] text-blue-400 font-bold">WFH</div> = Work From Home</div>
             <div className="flex items-center gap-1.5"><div className="w-4 h-4 rounded bg-red-500/20 border border-red-500/30 flex items-center justify-center text-[10px] text-red-400 font-bold">A</div> = Absent</div>
             <div className="flex items-center gap-1.5"><div className="w-4 h-4 rounded bg-gray-500/20 border border-gray-500/30 flex items-center justify-center text-[10px] text-gray-400 font-bold">O</div> = Off Day (Permanent)</div>
           </div>

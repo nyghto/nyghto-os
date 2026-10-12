@@ -227,7 +227,7 @@ export default function Dashboard() {
       const status = record?.status || 'None';
       const isSunday = new Date(currentYear, currentMonthIndex, i).getDay() === 0;
       if (!isSunday && status !== 'Off Day') {
-        if (status === 'Present') totalMarks += 10;
+        if (status === 'Present' || status === 'Work From Home') totalMarks += 10;
         else if (status === 'Half Day') totalMarks += 5;
         else if (status === 'Absent') leavesTaken++;
       }
@@ -277,7 +277,7 @@ export default function Dashboard() {
         const st = rec?.status || 'None';
         const isSun = new Date(year, month, d).getDay() === 0;
         if (!isSun && st !== 'Off Day') {
-          if (st === 'Present') mMarks += 10;
+          if (st === 'Present' || st === 'Work From Home') mMarks += 10;
           else if (st === 'Half Day') mMarks += 5;
           else if (st === 'Absent') mLeaves++;
         }
